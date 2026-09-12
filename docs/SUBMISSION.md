@@ -1,47 +1,38 @@
-# ReadyCheck submission preparation
+# Delivery checklist
 
-This is a preparation document, not a submitted entry. No public repository PR, hosted production deployment, public demonstration video, or Devpost submission has been created.
+The standalone source is published at [ankitlade12/readycheck](https://github.com/ankitlade12/readycheck). Public hosting, an upstream contribution PR, the final public video and Devpost submission remain pending. Older local contribution archives and validation records are not a package of the current source.
 
-## Contribution
+## Next steps
 
-Prepared target: `apps/typescript/readycheck/` in [Awesome Phone Call Agents](https://github.com/CALLE-AI/awesome-phone-call-agents), on local branch `feat/readycheck-app`. Current agent and contribution instructions were reviewed and repository validation passed. The clean package includes the app, domain engine, local sample path, README, lockfile, tests and configuration placeholders. It excludes `data/`, `.env`, private installation records, original product documents and `node_modules/`.
+1. Validate policy 1.2 negotiation in an approved consenting call using the [live protocol](LIVE_TEST_PROTOCOL.md). Keep the latest result and any limitations in the [verification record](VERIFICATION.md).
+2. Provision a persistent host, then verify signup, saved cases, restart persistence and judge access using the [deployment guide](DEPLOYMENT.md). The earlier Railway attempt was blocked by an expired trial; a usable hosting account is still needed.
+3. Prepare a fresh contribution from the current commit for [Awesome Phone Call Agents](https://github.com/CALLE-AI/awesome-phone-call-agents), under `apps/typescript/readycheck/`. Re-read upstream instructions and run its current validators. Select the source license before publishing the contribution; keep bundled font notices.
+4. Record and publish the demo with consented runtime evidence and clearly labeled fictional examples.
+5. Recheck [current hackathon rules](https://call-e.devpost.com/rules), eligibility, deadline, required links, CALL-E account details and judge-access requirements before submitting.
 
-Before submission, choose the public contribution license and confirm ownership of the original implementation. Upstream font notices are bundled in `public/notices/`. The current local source does not claim a selected license for the entrant; the destination repository uses MIT.
+## Project description
 
-## Draft project description
+ReadyCheck checks whether a local service, item or venue meets a complete request. It preserves must-haves, links each comparison to source evidence and leaves incomplete or conditional answers unresolved. CALL-E handles approved factual inquiries; ReadyCheck manages review, comparison, recovery and human follow-through.
 
-ReadyCheck helps someone check whether a local service, rental, or venue meets their entire request. It preserves must-haves, links each decision to its source evidence, and leaves incomplete or conditional answers unresolved. CALL-E handles approved factual inquiries; ReadyCheck owns comparison, persistence, recovery, and human follow-through.
+Its reusable pieces are a typed requirement evaluator, evidence-backed limit revisions, focused follow-ups and bounded extraction repair with account-scoped feedback. Source corrections remain reviewable; the system does not train itself or guarantee live conversational behavior.
 
-The reusable contribution is a typed requirement evaluator, evidence-backed limit exploration and a bounded inquiry workflow that can ask just the one missing factual question. A limit change becomes a new revision only when the user applies it. Examples include a starting repair estimate that cannot satisfy a hard budget, a rental deposit checked separately from final cost and up-front cash, and a venue whose capacity or entry route blocks the request.
+## Demo outline — about 2:45
 
-Current proof: local working app, synthetic evaluator fixtures, mocked call recovery and HTTP tests, and browser verification. A separately requested CLI audio test and one app-originated inquiry completed. The app persisted the task ID and transcript, resumed reads after restart, and correctly left zero-fact requirements unresolved. Caller behavior was repetitive; the subsequent instruction changes still need a live test. Positive extraction and contrasting outcomes remain unverified. Do not claim that sample providers represent current businesses or availability.
+| Time      | Show                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------- |
+| 0:00–0:20 | Backpack repair request, deadline, private budget and drop-off window                                    |
+| 0:20–0:50 | Consented CALL-E runtime clip showing the behavior actually observed                                     |
+| 0:50–1:20 | Fictional comparison: starting estimate unresolved, wrong service fails, confirmed $45 quote exceeds $40 |
+| 1:20–1:50 | Preview a supported $45 budget revision; inspect the preserved original requirements                     |
+| 1:50–2:20 | In a fresh sample, keep $40 and resolve the single missing final-price answer                            |
+| 2:20–2:45 | Review evidence and correction memory, record a human next action, state validation limits               |
 
-## Proposed 2:45 demo
+Use separate fresh samples for the two decision paths. Label fictional businesses, role-play, historical clips and time cuts. A sample recording does not prove current business availability or CALL-E voice quality. Public evidence retained beyond the normal transcript policy needs an agreed retention arrangement.
 
-| Time      | Show                                                                                                       |
-| --------- | ---------------------------------------------------------------------------------------------------------- |
-| 0:00–0:20 | The backpack zipper request: deadline, firm $40 budget, drop-off window                                    |
-| 0:20–0:50 | Genuine consented CALL-E runtime clip; label any role-play and remove private details                      |
-| 0:50–1:20 | Comparison: starting estimate unresolved, wrong service fails, confirmed $45 quote exceeds budget          |
-| 1:20–1:50 | “What would make this work?” Preview $45 from the quote; apply a revision and inspect original $40 history |
-| 1:50–2:20 | Alternative path: keep $40; preview “The one question left” and inspect its result                         |
-| 2:20–2:45 | Saved evidence, human next action and accurately labeled validation results                                |
+## Before publishing
 
-The local fictional feature recording and its narration are described in `DEMO_WALKTHROUGH.md`. It is a review asset, not the final live-evidence submission video. The two decision paths use separate fresh sample cases so applying $45 does not hide the unresolved $40 scenario.
-
-Label the sample flow as a fictional prototype demonstration; the existing zero-fact live inquiry does not prove the sample’s positive outcomes. A sample recording does not prove actual CALL-E runtime execution. Label role-play, historical recordings, and time cuts. Judge evidence intended to remain available longer than the normal transcript policy needs a separately consented and disclosed retention arrangement.
-
-## Submission checklist
-
-- [ ] Confirm participant eligibility and account registration.
-- [ ] Complete at least three contrasting consenting live tests and record operational limitations.
-- [ ] Verify actual provider create/read response contract and attempts/billing behavior.
-- [ ] Prepare a clean contribution directory and select its license.
-- [x] Run the target repository's required validators.
-- [ ] Open the contribution PR and include its URL in Devpost.
-- [ ] Publish a demonstration video shorter than three minutes.
-- [ ] Supply the CALL-E account email and accurate testing instructions.
-- [ ] Provide judge-accessible project/test-build access through the end of judging.
-- [ ] Check every required link before submitting.
-
-The deadline was rechecked on September 9: September 14, 2026 at 23:45 Singapore time, or 10:45 a.m. Chicago time. Verify against the [current rules](https://call-e.devpost.com/rules) before submission. Aim to finish assets September 13.
+- [ ] Verify current-source build, tests and upstream validation.
+- [ ] Select the contribution license and open the upstream PR.
+- [ ] Provide a working judge-accessible build and testing instructions.
+- [ ] Publish the final video and verify every required link.
+- [ ] Complete the Devpost entry with accurate observed results and account information.

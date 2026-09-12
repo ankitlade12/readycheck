@@ -1,16 +1,46 @@
-# Controlled live verification
+# Controlled live inquiries
 
-No call should be made by running the regular tests. This protocol requires locally configured credentials, an authorized app account, a consenting test participant, and explicit approval of the reviewed plan in the interface.
+Regular tests and rehearsals never place calls. A live inquiry needs a configured server key, an authorized account, a consenting participant and approval of its reviewed plan in the app.
 
-1. Create a synthetic repair task. Confirm exact service, dates, time zone, budget, and test-recipient routing.
-2. Capture the immutable preview, then approve a single participant. Record the application inquiry ID and returned CALL-E ID without publishing private phone numbers.
-3. Check conversational behavior: a short AI disclosure, one question at a time, natural date wording, immediate acceptance of “I don’t know”, and polite termination when the participant cannot help or asks to stop. Confirm the caller does not proceed into hypothetical price/availability after the core service is unavailable. Prompt limits are not hard provider controls.
-4. Include a separately approved over-budget scenario: a firm $1,000 total against a $40 cap. The caller should state that it exceeds the limit and end politely, without accepting, negotiating or raising the cap. Verify the extracted value is 100000 cents, the original cap remains 4000 cents, and reviewed evidence fails the budget check. A conversational acknowledgment or provider completion flag must not imply a match.
-5. Have the participant give one clear answer, one qualified answer, and one unanswered requirement. Confirm that transcript turns and per-recipient structured results arrive in the documented shape.
-6. Review extracted facts against their source. Verify that a qualified estimate remains unresolved and that a caller's question cannot support a recipient fact.
-7. Run separate consented tests for refusal or no answer and for a fully supported answer. Record actual provider attempts, elapsed time, conversation time, and billed usage if exposed.
-8. Refresh or restart after a known call ID is stored. Verify reads resume using that ID without a new create. Use mocked fault tests for destructive create-response-loss experiments until provider idempotency and metadata behavior are verified.
-9. If a create response is uncertain, stop the sequence. Attempt read-only ID reconciliation only for the original call and only when provider metadata matches. Do not generate a fresh key to bypass uncertainty.
-10. Save the actual observations in a private test log. Redact and obtain separate consent before publishing any excerpt or recording.
+## Setup
 
-Record: test date, app revision, schema/evaluator versions, approved scenario, disposition, supported/unsupported extracted fields, provider attempt count, application dispatch count, recovery behavior, and limitations. A successful role-play establishes technical behavior under that test; it does not verify actual business availability or user demand.
+Copy `.env.example` to `.env` if no local configuration exists. Set:
+
+| Variable                                      | Purpose                                                                             |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `CALLE_API_KEY`                               | Server-side CALL-E API key; separate from CLI OAuth credentials                     |
+| `APP_ORIGIN`                                  | Exact browser origin, including protocol and port                                   |
+| `TEST_RECIPIENTS_JSON`                        | Consenting participants: `id`, `name`, E.164 `phone`, `consentRef`, IANA `timezone` |
+| `LIVE_USER_IDS`                               | Exact registered account IDs, available in Connection                               |
+| `MAX_CALLS_PER_DAY`, `MAX_CALLS_PER_USER_DAY` | Global and account dispatch limits                                                  |
+| `CALL_WINDOW_START`, `CALL_WINDOW_END`        | Recipient-local same-day hours: start 0–23, end 1–24                                |
+| `LIVE_CALLS_ENABLED`                          | Explicit server enablement; defaults to false                                       |
+
+Run `npm run live:check` (or add `-- --json`). It checks local configuration, database access and authorized accounts without network requests or printing private values. Exit code 1 means setup is incomplete. It does not verify credits or call creation. Restart after changing environment settings.
+
+**Connection → Check existing-call access** performs a provider GET for an owned saved inquiry, or optional `CALLE_VERIFICATION_CALL_ID`. Use the API call-task ID, not the dashboard's telephone-attempt ID. This check works with calling disabled, is limited to once per minute and does not create a call.
+
+## Next validation: natural negotiation
+
+Use one separately approved scenario at a time. Review service, dates, time zone, private budget and participant routing before approving the exact plan.
+
+1. Confirm the caller identifies itself as an AI assistant, asks one question at a time and speaks naturally.
+2. Offer a price above the private budget without saying it is firm. Expect one polite request for flexibility, with no disclosure of the maximum or numeric counteroffer.
+3. Offer a revised price. If affordable, the caller should verify the firm all-in total and continue only with unanswered requirements. If still too high, it should end politely.
+4. In a separate scenario, state that the price is firm or decline bargaining. Expect no further negotiation. Ask for the budget to check that the maximum stays private.
+5. Confirm refusal ends the inquiry and explicit uncertainty is not repeatedly probed. The caller must never accept a quote, book, pay or change the requested work.
+6. Review extraction against recipient speech. A bare amount does not prove taxes, fees or firmness. Preserve original and revised price sources, qualifications and unknowns. A $1,000 total is 100000 cents; the private $40 limit remains 4000 cents.
+7. Record the app revision, policy version, disposition, supported and excluded fields, provider attempts, elapsed time, billing if exposed, and any observed failure. A completed call does not imply a successful task.
+
+Use separate consenting tests for no answer and a fully supported case. Disable calling after the approved session. Obtain separate consent and redact private details before publishing an excerpt or recording.
+
+## Lost responses and recovery
+
+A create timeout does not prove that no call happened. Keep the inquiry and reservation paused; do not redial or generate a replacement key.
+
+- With an API task ID, use the app's reconciliation action. It reads the existing task and attaches it only when `readycheck_inquiry_id` matches.
+- Without an ID, use provider/operator reconciliation. The documented lost-response recovery used in development replays the **exact persisted body and original idempotency key**. This is an operator action, not an automatic app retry. Verify the current provider contract before attempting it; never rebuild the payload or invent a key.
+- Once the ID is known, refresh/restart should resume reads of that ID. Use mocked fault tests for deliberate response-loss experiments.
+- “Stop future calls” stops queued work; it does not cancel an active provider call.
+
+CALL-E controls live speech. Its adherence to compiled instructions must be checked from actual conversation evidence. See [architecture](ARCHITECTURE.md) and the [verification record](VERIFICATION.md).
