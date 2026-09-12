@@ -113,6 +113,15 @@ test('a correction review changes durable account memory, and rejection pauses i
     await expect(page.getByText('Automatic correction · reviewed')).toBeVisible();
     await page.getByRole('button', { name: 'Correct interpretation', exact: true }).click();
     await page.getByLabel('Amount in dollars').fill('39');
+    await page.getByRole('combobox', { name: 'Certainty', exact: true }).selectOption('tentative');
+    await page
+      .getByRole('combobox', { name: 'Price interpretation', exact: true })
+      .selectOption('estimate');
+    await page.getByLabel('Actual conditions (one per line)').fill('Inspection required');
+    await page
+      .getByLabel('Supporting context (one per line)')
+      .fill('Synthetic metadata correction');
+    await page.getByLabel('Source segment containing the quote').selectOption('0');
     await page
       .getByLabel('Reason', { exact: true })
       .fill('Synthetic rejection exercise; this edit is not supported by the quote.');
@@ -120,6 +129,14 @@ test('a correction review changes durable account memory, and rejection pauses i
     await expect
       .poll(() => store.db.prepare('SELECT outcome FROM correction_feedback').get()!.outcome)
       .toBe('rejected');
+    const corrected = store
+      .getCase(record.id, session.user.id)!
+      .revisions[0].results[0].facts.at(-1)!;
+    expect(corrected.certainty).toBe('tentative');
+    expect(corrected.priceBasis).toBe('estimate');
+    expect(corrected.conditions).toEqual(['Inspection required']);
+    expect(corrected.context).toEqual(['Synthetic metadata correction']);
+    expect(corrected.evidenceTurns).toEqual([0]);
     await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('button', { name: 'Learning', exact: true }).click();

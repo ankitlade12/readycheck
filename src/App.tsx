@@ -228,6 +228,14 @@ export default function App() {
       void run(async () => {
         await open(active!.id, false);
       }),
+    recover: (inquiryId) =>
+      void run(async () => {
+        try {
+          await api(`/inquiries/${inquiryId}/recover`, 'POST', { confirm: true });
+        } finally {
+          await open(active!.id, false);
+        }
+      }),
     reconcile: (inquiryId, vendorId) =>
       void run(async () => {
         await api(`/inquiries/${inquiryId}/reconcile`, 'POST', { vendorId });

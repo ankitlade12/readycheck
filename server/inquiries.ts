@@ -7,8 +7,9 @@ import {
   conversationInstructions,
   contactBoundary,
   opening,
+  spokenQuestion,
 } from '../src/domain/conversation';
-import { displayValue, evaluateCandidate } from '../src/domain/evaluator';
+import { evaluateCandidate } from '../src/domain/evaluator';
 import type { Store } from './store';
 import { sha256, type User } from './auth';
 import { connection, publicRecipient, type Config } from './config';
@@ -19,6 +20,7 @@ import {
   mergeResults,
   parseCallResult,
   providerStatus,
+  providerPhase,
   type CallTransport,
 } from './calle';
 
@@ -51,6 +53,19 @@ export function readPlan(store: Store, id: string, owner: string): Plan | null {
       error: r.error as string | null,
       createdAt: String(r.created_at),
       updatedAt: String(r.updated_at),
+      providerPhase: store.db
+        .prepare(
+          "SELECT detail FROM events WHERE inquiry_id=? AND type='provider_phase' ORDER BY rowid DESC LIMIT 1",
+        )
+        .get(String(r.id))?.detail as Inquiry['providerPhase'],
+      recoveryAttempted: !!store.db
+        .prepare("SELECT 1 FROM events WHERE inquiry_id=? AND type='recovery_started' LIMIT 1")
+        .get(String(r.id)),
+      recoveredVendorId: store.db
+        .prepare(
+          "SELECT detail FROM events WHERE inquiry_id=? AND type='recovery_id' ORDER BY rowid DESC LIMIT 1",
+        )
+        .get(String(r.id))?.detail as string | undefined,
     }));
   return plan;
 }
@@ -134,10 +149,7 @@ export function preparePlan(
     'No independently answerable question remains in this scope.',
   );
   requirements = policy.fields.map((id) => requirements.find((r) => r.id === id)!);
-  const questions = requirements.map(
-    (r) =>
-      `${r.label}: ${r.question} Your requirement: ${displayValue(r, revision.task.timeZone)}.`,
-  );
+  const questions = requirements.map((r) => spokenQuestion(policy, r));
   const disclosure = opening;
   const learning = learningSummary(store, user.id);
   const taskText = [conversationInstructions(policy), learningInstructions(learning)]
@@ -428,6 +440,112 @@ export class InquiryService {
       )
       .run(new Date().toISOString(), planId);
   }
+  async recover(inquiryId: string, user: User) {
+    const replay = this.transport.recover;
+    assert(replay, 503, 'Recovery is not supported by this transport. Use the original call ID.');
+    const row = this.store.transaction(() => {
+      const conn = connection(this.config, user);
+      assert(
+        conn.configured && conn.authorized,
+        403,
+        'Live testing must be enabled and authorized for request recovery.',
+      );
+      const row = this.store.db
+        .prepare('SELECT * FROM inquiries WHERE id=? AND owner_id=?')
+        .get(inquiryId, user.id);
+      assert(row, 404, 'Inquiry not found.');
+      assert(
+        row.state === 'dispatch_unknown' && !row.vendor_id,
+        409,
+        'Only a lost create response needs request recovery.',
+      );
+      assert(
+        !this.store.db
+          .prepare("SELECT 1 FROM events WHERE inquiry_id=? AND type='recovery_started'")
+          .get(inquiryId),
+        409,
+        'Recovery was already attempted. Reconcile with the original call ID.',
+      );
+      const plan = readPlan(this.store, String(row.plan_id), user.id)!;
+      const record = this.store.getCase(plan.caseId, user.id);
+      assert(
+        record &&
+          !record.stopped &&
+          record.currentVersion === plan.version &&
+          plan.status === 'approved',
+        409,
+        'This request is no longer approved. Use read-only ID reconciliation.',
+      );
+      assert(
+        Date.parse(plan.expiresAt) > Date.now() &&
+          plan.policyVersion === CONVERSATION_POLICY_VERSION &&
+          plan.learningVersion === learningSummary(this.store, user.id).version,
+        409,
+        'The approved request expired or its policy changed. Use read-only ID reconciliation.',
+      );
+      const { hash, status: _status, inquiries: _inquiries, ...content } = plan;
+      const routing = plan.recipients.map((r) =>
+        this.config.recipients.find((current) => current.id === r.id),
+      );
+      assert(
+        routing.every(Boolean) && sha256(JSON.stringify({ ...content, routing })) === hash,
+        409,
+        'Recipient routing or consent changed. Use read-only ID reconciliation.',
+      );
+      const recipient = routing.find((r) => r!.id === row.candidate_id)!;
+      const hour = Number(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: recipient.timezone,
+          hour: 'numeric',
+          hourCycle: 'h23',
+        }).format(new Date()),
+      );
+      assert(
+        hour >= this.config.callStart && hour < this.config.callEnd,
+        409,
+        'Outside the recipient’s calling window.',
+      );
+      assert(
+        this.store.db
+          .prepare('SELECT 1 FROM budgets WHERE inquiry_id=? AND released=0')
+          .get(inquiryId),
+        409,
+        'The original call reservation is missing.',
+      );
+      const payload = JSON.parse(String(row.payload));
+      assert(
+        payload.metadata?.readycheck_inquiry_id === inquiryId &&
+          payload.recipients?.[0]?.phones?.[0] === recipient.phone,
+        409,
+        'Stored request does not match this inquiry.',
+      );
+      // Commit before network I/O: concurrent clicks and process restarts cannot replay again.
+      this.store.event(inquiryId, 'recovery_started');
+      return row;
+    });
+    try {
+      const vendorId = await replay.call(
+        this.transport,
+        String(row.payload),
+        String(row.idempotency_key),
+      );
+      // Keep the ID even if the following read fails; further recovery is read-only.
+      this.store.event(inquiryId, 'recovery_id', vendorId);
+      return await this.reconcile(inquiryId, vendorId, user);
+    } catch (error) {
+      this.store.db
+        .prepare(
+          "UPDATE inquiries SET error=?,updated_at=? WHERE id=? AND state='dispatch_unknown'",
+        )
+        .run(
+          'Recovery could not be verified. Use the saved call reference or check CALL-E; no further request replay is allowed.',
+          new Date().toISOString(),
+          inquiryId,
+        );
+      this.store.event(inquiryId, 'recovery_unverified');
+      throw error;
+    }
+  }
   async reconcile(inquiryId: string, vendorId: string, user: User) {
     assert(
       connection(this.config, user).authorized,
@@ -472,60 +590,82 @@ export class InquiryService {
           const body = await this.transport.read(String(row.vendor_id));
           const status = providerStatus(body);
           if (['completed', 'failed', 'cancelled', 'canceled'].includes(status)) {
-            const planRow = this.store.db
-              .prepare('SELECT * FROM plans WHERE id=?')
-              .get(row.plan_id as string)!;
-            const record = this.store.getCase(String(planRow.case_id), String(row.owner_id));
-            if (record) {
-              const revision = record.revisions.find((r) => r.version === Number(planRow.version));
-              const recipient = this.config.recipients.find((r) => r.id === row.candidate_id);
-              if (revision && recipient) {
-                const result = parseCallResult(
-                  body,
-                  revision.task,
-                  recipient,
-                  String(row.id),
-                  // A delayed read must not make old call evidence look fresh.
-                  // Use the persisted request time until provider completion-time semantics are verified.
-                  String(row.created_at),
-                  disabledRepairs(learningSummary(this.store, String(row.owner_id))),
+            this.store.transaction(() => {
+              const latest = this.store.db
+                .prepare('SELECT state FROM inquiries WHERE id=?')
+                .get(String(row.id));
+              if (!latest || !['submitted', 'observing'].includes(String(latest.state))) return;
+              const planRow = this.store.db
+                .prepare('SELECT * FROM plans WHERE id=?')
+                .get(row.plan_id as string)!;
+              const record = this.store.getCase(String(planRow.case_id), String(row.owner_id));
+              if (record) {
+                const revision = record.revisions.find(
+                  (r) => r.version === Number(planRow.version),
                 );
-                const index = revision.results.findIndex((r) => r.id === result.id);
-                const merged = mergeResults(revision.results[index], result);
-                if (index < 0) revision.results.push(merged);
-                else revision.results[index] = merged;
-                record.updatedAt = new Date().toISOString();
-                this.store.saveCase(String(row.owner_id), record);
+                const recipient = this.config.recipients.find((r) => r.id === row.candidate_id);
+                if (revision && recipient) {
+                  const result = parseCallResult(
+                    body,
+                    revision.task,
+                    recipient,
+                    String(row.id),
+                    // A delayed read must not make old call evidence look fresh.
+                    // Use the persisted request time until provider completion-time semantics are verified.
+                    String(row.created_at),
+                    disabledRepairs(learningSummary(this.store, String(row.owner_id))),
+                  );
+                  const index = revision.results.findIndex((r) => r.id === result.id);
+                  const merged = mergeResults(revision.results[index], result);
+                  if (index < 0) revision.results.push(merged);
+                  else revision.results[index] = merged;
+                  record.updatedAt = new Date().toISOString();
+                  this.store.saveCase(String(row.owner_id), record);
+                }
+                this.store.db
+                  .prepare('INSERT OR REPLACE INTO provider_results VALUES(?,?,?)')
+                  .run(
+                    row.id as string,
+                    JSON.stringify(body),
+                    new Date(Date.now() + this.config.retentionDays * 86400000).toISOString(),
+                  );
               }
               this.store.db
-                .prepare('INSERT OR REPLACE INTO provider_results VALUES(?,?,?)')
+                .prepare('UPDATE inquiries SET state=?,updated_at=?,error=NULL WHERE id=?')
                 .run(
+                  record ? 'review_required' : 'evaluated',
+                  new Date().toISOString(),
                   row.id as string,
-                  JSON.stringify(body),
-                  new Date(Date.now() + this.config.retentionDays * 86400000).toISOString(),
                 );
-            }
-            this.store.db
-              .prepare('UPDATE inquiries SET state=?,updated_at=?,error=NULL WHERE id=?')
-              .run(
-                record ? 'review_required' : 'evaluated',
-                new Date().toISOString(),
-                row.id as string,
-              );
-            this.store.event(String(row.id), 'result_received', status);
+              this.store.event(String(row.id), 'result_received', status);
+            });
           } else {
-            this.store.db
-              .prepare(
-                "UPDATE inquiries SET state='observing',next_poll=?,attempts=attempts+1,error=?,updated_at=? WHERE id=?",
-              )
-              .run(
-                new Date(Date.now() + 15000).toISOString(),
-                status === 'invalid'
-                  ? 'Provider status is unrecognized; read-only reconciliation continues.'
-                  : null,
-                new Date().toISOString(),
-                row.id as string,
-              );
+            this.store.transaction(() => {
+              const latest = this.store.db
+                .prepare('SELECT state FROM inquiries WHERE id=?')
+                .get(String(row.id));
+              if (!latest || !['submitted', 'observing'].includes(String(latest.state))) return;
+              const phase = providerPhase(body);
+              const previous = this.store.db
+                .prepare(
+                  "SELECT detail FROM events WHERE inquiry_id=? AND type='provider_phase' ORDER BY rowid DESC LIMIT 1",
+                )
+                .get(String(row.id));
+              if (previous?.detail !== phase)
+                this.store.event(String(row.id), 'provider_phase', phase);
+              this.store.db
+                .prepare(
+                  "UPDATE inquiries SET state='observing',next_poll=?,attempts=attempts+1,error=?,updated_at=? WHERE id=?",
+                )
+                .run(
+                  new Date(Date.now() + 15000).toISOString(),
+                  status === 'invalid'
+                    ? 'Provider status is unrecognized; read-only reconciliation continues.'
+                    : null,
+                  new Date().toISOString(),
+                  row.id as string,
+                );
+            });
           }
         } catch {
           this.store.db

@@ -41,6 +41,7 @@ export interface WorkspaceActions {
   review: (candidateId: string, version: number, review: FactReview) => void;
   acknowledge: (inquiryId: string) => void;
   refresh: () => void;
+  recover: (inquiryId: string) => void;
   reconcile: (inquiryId: string, vendorId: string) => void;
 }
 export function Workspace({
@@ -880,6 +881,46 @@ export function Workspace({
             Find the original call ID in your CALL-E account. ReadyCheck will only read it and
             attach it if the provider returns matching inquiry metadata. This never redials.
           </p>
+          {(() => {
+            const inquiry = record.plans
+              .flatMap((p) => p.inquiries)
+              .find((i) => i.id === reconciling);
+            return (
+              <div className="notice">
+                {inquiry?.recoveredVendorId ? (
+                  <p>
+                    Saved call reference: <code>{inquiry.recoveredVendorId}</code>
+                  </p>
+                ) : null}
+                {inquiry?.recoveryAttempted ? (
+                  <p>
+                    Request recovery was already attempted. Use the original call ID below for
+                    read-only verification.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      If the response was lost, you can retry the exact approved request once.
+                      CALL-E uses the original key to recover an existing call. If the first request
+                      never arrived, this may start the approved call now.
+                    </p>
+                    <button
+                      className="button secondary"
+                      disabled={
+                        busy || !session.connection.configured || !session.connection.authorized
+                      }
+                      onClick={() => {
+                        actions.recover(reconciling);
+                        setReconciling(null);
+                      }}
+                    >
+                      Recover original request once
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <label>
             Existing CALL-E call ID
             <input

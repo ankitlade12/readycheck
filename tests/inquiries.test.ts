@@ -604,7 +604,7 @@ describe('focused follow-up approval scope', () => {
       );
       assert.equal(focused.questions.length, 1);
       assert.equal(focused.focusField, 'budget');
-      assert.ok(focused.questions[0].includes('all-in total'));
+      assert.ok(focused.questions[0].includes('final total, including taxes and fees'));
       assert.equal(readPlan(s.store, focused.id, s.user.id)!.focusField, 'budget');
       const payload = JSON.parse(
         String(
@@ -615,10 +615,7 @@ describe('focused follow-up approval scope', () => {
       const data = JSON.parse(
         payload.task.split('\n\n').find((part: string) => part.startsWith('{'))!,
       );
-      assert.deepEqual(
-        data.requirements.map((r: { id: string }) => r.id),
-        ['budget'],
-      );
+      assert.deepEqual(data.questionOrder, ['budget']);
       result.disposition = 'refused';
       s.store.saveCase(s.user.id, s.record);
       assert.throws(
@@ -630,4 +627,330 @@ describe('focused follow-up approval scope', () => {
       s.store.close();
     }
   });
+});
+
+function regressionBody(field: string, value: unknown, quote: string, conditions: string[] = []) {
+  return {
+    status: 'completed',
+    recipients: [
+      {
+        structured_result: {
+          disposition: 'answered',
+          facts: [
+            {
+              field,
+              value_json: JSON.stringify(value),
+              quote,
+              turn_index: 1,
+              certainty: 'confirmed',
+              conditions,
+              unit: field === 'budget' ? 'USD' : 'none',
+              price_basis: field === 'budget' ? 'all_in' : 'not_applicable',
+            },
+          ],
+        },
+        attempts: [
+          {
+            transcript_turns: [
+              { speaker: 'bot', text: 'Can you meet this request?' },
+              { speaker: 'user', text: quote },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+describe('staff audit regressions', () => {
+  it('never passes a punctuated $60 quote normalized as $30', () => {
+    const s = setup();
+    try {
+      const task = s.record.revisions[0].task;
+      const result = parseCallResult(
+        regressionBody('budget', 3000, 'It will be $60.'),
+        task,
+        s.config.recipients[0],
+        'money',
+        s.record.createdAt,
+      );
+      assert.equal(result.facts[0].value, 6000);
+      assert.equal(
+        evaluateCandidate(task, result).checks.find((c) => c.requirement.id === 'budget')!.verdict,
+        'unknown',
+      );
+      result.facts[0].reviewed = true;
+      assert.equal(
+        evaluateCandidate(task, result).checks.find((c) => c.requirement.id === 'budget')!.verdict,
+        'fail',
+      );
+      result.facts[0].value = 3000;
+      assert.notEqual(
+        evaluateCandidate(task, result).checks.find((c) => c.requirement.id === 'budget')!.verdict,
+        'pass',
+      );
+    } finally {
+      s.store.close();
+    }
+  });
+  it('keeps negative availability tied to the requested window and preserves question context', () => {
+    const s = setup();
+    try {
+      const task = s.record.revisions[0].task;
+      const result = parseCallResult(
+        regressionBody('dropoff', false, 'No, that time does not work.'),
+        task,
+        s.config.recipients[0],
+        'negative',
+        s.record.createdAt,
+      );
+      assert.deepEqual(result.facts[0].evidenceTurns, [0, 1]);
+      result.facts[0].reviewed = true;
+      assert.equal(
+        evaluateCandidate(task, result).checks.find((c) => c.requirement.id === 'dropoff')!.verdict,
+        'fail',
+      );
+      const revised = structuredClone(task);
+      const window = revised.requirements.find((r) => r.id === 'dropoff')!.value as {
+        start: string;
+        end: string;
+      };
+      window.start = new Date(Date.parse(window.start) + 86400000).toISOString();
+      window.end = new Date(Date.parse(window.end) + 86400000).toISOString();
+      assert.equal(
+        evaluateCandidate(revised, result).checks.find((c) => c.requirement.id === 'dropoff')!
+          .verdict,
+        'unknown',
+      );
+    } finally {
+      s.store.close();
+    }
+  });
+  it('rolls back all result writes and ingests a retried delivery exactly once', async () => {
+    const s = setup({
+      create: async () => 'call_fixture',
+      read: async () =>
+        regressionBody('service', 'Backpack zipper repair', 'We repair backpack zippers.'),
+    });
+    try {
+      await s.service.dispatchNext(s.plan.id, s.user);
+      s.store.db.prepare('UPDATE inquiries SET next_poll=NULL').run();
+      s.store.db.exec(
+        "CREATE TEMP TRIGGER fail_result BEFORE INSERT ON provider_results BEGIN SELECT RAISE(ABORT,'interrupted write'); END;",
+      );
+      await s.service.tick();
+      assert.equal(s.store.getCase(s.record.id, s.user.id)!.revisions[0].results.length, 0);
+      assert.equal(
+        s.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='result_received'").get()!
+          .n,
+        0,
+      );
+      s.store.db.exec('DROP TRIGGER fail_result');
+      s.store.db.prepare('UPDATE inquiries SET next_poll=NULL').run();
+      const secondWorker = new InquiryService(s.store, s.config, s.service.transport);
+      await Promise.all([s.service.tick(), secondWorker.tick()]);
+      assert.equal(
+        s.store.getCase(s.record.id, s.user.id)!.revisions[0].results[0].facts.length,
+        1,
+      );
+      assert.equal(
+        s.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='result_received'").get()!
+          .n,
+        1,
+      );
+    } finally {
+      s.store.close();
+    }
+  });
+  it('replays the exact saved body and key once across concurrent requests', async () => {
+    let recoveries = 0,
+      expected = '',
+      originalBody = '',
+      originalKey = '';
+    const s = setup({
+      create: async () => {
+        throw new DispatchUnknown('lost response');
+      },
+      recover: async (body, key) => {
+        recoveries++;
+        assert.equal(body, originalBody);
+        assert.equal(key, originalKey);
+        return 'call_original';
+      },
+      read: async () => ({ metadata: { readycheck_inquiry_id: expected }, status: 'queued' }),
+    });
+    try {
+      expected = s.plan.inquiries[0].id;
+      await s.service.dispatchNext(s.plan.id, s.user);
+      const stored = s.store.db
+        .prepare('SELECT payload,idempotency_key FROM inquiries WHERE id=?')
+        .get(expected)!;
+      originalBody = String(stored.payload);
+      originalKey = String(stored.idempotency_key);
+      const results = await Promise.allSettled([
+        s.service.recover(expected, s.user),
+        s.service.recover(expected, s.user),
+      ]);
+      assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+      assert.equal(recoveries, 1);
+      const inquiry = readPlan(s.store, s.plan.id, s.user.id)!.inquiries[0];
+      assert.equal(inquiry.vendorId, 'call_original');
+      assert.equal(inquiry.recoveryAttempted, true);
+      assert.equal(
+        s.store.db.prepare('SELECT COUNT(*) AS n FROM budgets WHERE released=0').get()!.n,
+        1,
+      );
+    } finally {
+      s.store.close();
+    }
+  });
+  it('retains a recovered ID after a read failure and blocks another replay after restart', async () => {
+    let readsFail = true,
+      expected = '',
+      recoveries = 0;
+    const s = setup({
+      create: async () => {
+        throw new DispatchUnknown('lost');
+      },
+      recover: async () => {
+        recoveries++;
+        return 'call_saved';
+      },
+      read: async () => {
+        if (readsFail) throw Error('read timeout');
+        return { metadata: { readycheck_inquiry_id: expected } };
+      },
+    });
+    try {
+      expected = s.plan.inquiries[0].id;
+      await s.service.dispatchNext(s.plan.id, s.user);
+      await assert.rejects(() => s.service.recover(expected, s.user), /read timeout/);
+      const inquiry = readPlan(s.store, s.plan.id, s.user.id)!.inquiries[0];
+      assert.equal(inquiry.recoveredVendorId, 'call_saved');
+      assert.equal(inquiry.state, 'dispatch_unknown');
+      const restarted = new InquiryService(s.store, s.config, s.service.transport);
+      await assert.rejects(() => restarted.recover(expected, s.user), /already attempted/);
+      assert.equal(recoveries, 1);
+      readsFail = false;
+      s.config.enabled = false;
+      await restarted.reconcile(expected, inquiry.recoveredVendorId!, s.user);
+      assert.equal(readPlan(s.store, s.plan.id, s.user.id)!.inquiries[0].state, 'submitted');
+    } finally {
+      s.store.close();
+    }
+  });
+  it('blocks request recovery when stopped, disabled, expired, unowned or consent changed', async () => {
+    for (const change of ['stopped', 'disabled', 'expired', 'owner', 'consent']) {
+      let replays = 0;
+      const s = setup({
+        create: async () => {
+          throw new DispatchUnknown('lost');
+        },
+        recover: async () => {
+          replays++;
+          return 'call_no';
+        },
+        read: async () => ({}),
+      });
+      try {
+        await s.service.dispatchNext(s.plan.id, s.user);
+        if (change === 'disabled') s.config.enabled = false;
+        if (change === 'stopped') s.service.stop(s.plan.id);
+        if (change === 'expired') {
+          const row = s.store.db.prepare('SELECT data FROM plans WHERE id=?').get(s.plan.id)!;
+          const data = JSON.parse(String(row.data));
+          data.expiresAt = '2000-01-01T00:00:00Z';
+          s.store.db
+            .prepare('UPDATE plans SET data=? WHERE id=?')
+            .run(JSON.stringify(data), s.plan.id);
+        }
+        if (change === 'consent') s.config.recipients[0].consentRef = 'changed-consent';
+        await assert.rejects(() =>
+          s.service.recover(
+            s.plan.inquiries[0].id,
+            change === 'owner' ? { ...s.user, id: 'other' } : s.user,
+          ),
+        );
+        assert.equal(replays, 0, change);
+        assert.equal(
+          s.store.db
+            .prepare("SELECT COUNT(*) AS n FROM events WHERE type='recovery_started'")
+            .get()!.n,
+          0,
+        );
+      } finally {
+        s.store.close();
+      }
+    }
+  });
+});
+
+it('does not turn a role-reversed drop-off answer into a confirmed mismatch', () => {
+  const s = setup();
+  try {
+    const body = regressionBody('dropoff', false, 'No.');
+    body.recipients[0].attempts[0].transcript_turns[0].text = 'Could you drop it off on Thursday?';
+    const task = s.record.revisions[0].task;
+    const result = parseCallResult(body, task, s.config.recipients[0], 'roles', s.record.createdAt);
+    result.facts[0].reviewed = true;
+    assert.equal(result.facts[0].answerState, 'unknown');
+    assert.equal(result.conversationWarnings!.length, 1);
+    assert.equal(
+      evaluateCandidate(task, result).checks.find((c) => c.requirement.id === 'dropoff')!.verdict,
+      'unknown',
+    );
+  } finally {
+    s.store.close();
+  }
+});
+
+it('a late nonterminal read cannot revert an already ingested result', async () => {
+  let release!: (body: unknown) => void;
+  const pending = new Promise<unknown>((resolve) => {
+    release = resolve;
+  });
+  const s = setup({ create: async () => 'call_race', read: () => pending });
+  try {
+    await s.service.dispatchNext(s.plan.id, s.user);
+    s.store.db.prepare('UPDATE inquiries SET next_poll=NULL').run();
+    const first = s.service.tick();
+    const other = new InquiryService(s.store, s.config, {
+      create: async () => {
+        throw Error('No create');
+      },
+      read: async () =>
+        regressionBody('service', 'Backpack zipper repair', 'We repair backpack zippers.'),
+    });
+    await other.tick();
+    release({ status: 'in_progress' });
+    await first;
+    assert.equal(readPlan(s.store, s.plan.id, s.user.id)!.inquiries[0].state, 'review_required');
+    assert.equal(
+      s.store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE type='provider_phase'").get()!.n,
+      0,
+    );
+  } finally {
+    release({});
+    s.store.close();
+  }
+});
+
+it('redelivering evidence retains the prior review and its unique fact ID', async () => {
+  const { mergeResults } = await import('../server/calle');
+  const s = setup();
+  try {
+    const fresh = parseCallResult(
+      regressionBody('budget', 3800, 'The total is $38.'),
+      s.record.revisions[0].task,
+      s.config.recipients[0],
+      'repeat',
+      s.record.createdAt,
+    );
+    const reviewed = structuredClone(fresh);
+    reviewed.facts[0].reviewed = true;
+    const merged = mergeResults(reviewed, fresh);
+    assert.equal(merged.facts.length, 1);
+    assert.equal(merged.facts[0].reviewed, true);
+  } finally {
+    s.store.close();
+  }
 });

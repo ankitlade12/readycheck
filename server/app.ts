@@ -496,6 +496,12 @@ export function createApp(
   app.post('/api/plans/:id/continue', async (req, res) =>
     res.json(await service.dispatchNext(String(req.params.id), auth(res).user)),
   );
+  app.post('/api/inquiries/:id/recover', async (req, res) => {
+    z.object({ confirm: z.literal(true) })
+      .strict()
+      .parse(req.body);
+    res.json(await service.recover(String(req.params.id), auth(res).user));
+  });
   app.post('/api/inquiries/:id/reconcile', async (req, res) => {
     const input = z
       .object({ vendorId: z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/) })
@@ -517,6 +523,13 @@ export function createApp(
                 value: valueSchema.optional(),
                 reason: z.string().max(500).optional(),
                 supersedes: z.string().optional(),
+                certainty: z.enum(['confirmed', 'tentative']).optional(),
+                conditions: z.array(z.string().min(1).max(500)).max(10).optional(),
+                context: z.array(z.string().min(1).max(500)).max(10).optional(),
+                priceBasis: z.enum(['all_in', 'minimum', 'estimate', 'unit']).nullable().optional(),
+                answerState: z.enum(['value', 'unavailable', 'unknown']).optional(),
+                turn: z.number().int().nonnegative().optional(),
+                evidenceTurns: z.array(z.number().int().nonnegative()).max(20).optional(),
               })
               .strict(),
           )
@@ -532,13 +545,30 @@ export function createApp(
     assert(result, 404, 'Result not found.');
     store.transaction(() => {
       for (const review of input.reviews) {
-        const fact = result.facts.find((f) => f.id === review.factId);
+        let correctedFact: Fact | undefined;
+        const fact: Fact | undefined = result.facts.find((f) => f.id === review.factId);
         assert(fact, 404, 'Fact not found.');
         assert(
           !fact.rejected &&
-            !result.facts.some((newer) => newer.supersedes === fact.id && newer.reviewed),
+            !result.facts.some(
+              (newer) => newer.supersedes === fact.id && newer.reviewed && !newer.rejected,
+            ),
           409,
           'This evidence was rejected or replaced. Review its current interpretation.',
+        );
+        assert(
+          review.action === 'correct' ||
+            [
+              review.certainty,
+              review.conditions,
+              review.context,
+              review.priceBasis,
+              review.answerState,
+              review.turn,
+              review.evidenceTurns,
+            ].every((v) => v === undefined),
+          400,
+          'Metadata changes require an audited correction with a reason.',
         );
         if (review.action === 'reject') fact.rejected = true;
         else if (review.action === 'confirm') {
@@ -546,7 +576,10 @@ export function createApp(
           if (review.supersedes) {
             assert(
               result.facts.some(
-                (f) => f.id === review.supersedes && f.field === fact.field && f.id !== fact.id,
+                (f, index) =>
+                  f.id === review.supersedes &&
+                  f.field === fact.field &&
+                  index < result.facts.indexOf(fact),
               ),
               400,
               'Correction must refer to an earlier fact for this field.',
@@ -559,10 +592,42 @@ export function createApp(
             400,
             'A correction needs a value and a reason.',
           );
+          const source =
+            fact.sourceId === result.sourceId ? result.transcript : result.sources?.[fact.sourceId];
+          const turn = review.turn ?? fact.turn;
+          assert(
+            source?.[turn]?.speaker === 'recipient' && source[turn].text.includes(fact.raw),
+            400,
+            'The source turn must contain this exact recipient quote.',
+          );
+          const evidenceTurns = [
+            ...new Set([turn, ...(review.evidenceTurns ?? fact.evidenceTurns ?? [])]),
+          ].sort((a, b) => a - b);
+          assert(
+            evidenceTurns.every((i) => !!source?.[i]),
+            400,
+            'Supporting turns must belong to this source conversation.',
+          );
           const corrected: Fact = {
             ...fact,
             id: randomUUID(),
             value: review.value,
+            certainty: review.certainty ?? fact.certainty,
+            conditions: review.conditions ?? fact.conditions,
+            context: review.context ?? fact.context,
+            priceBasis:
+              review.priceBasis === null ? undefined : (review.priceBasis ?? fact.priceBasis),
+            answerState: review.answerState ?? fact.answerState,
+            turn,
+            evidenceTurns,
+            scope:
+              (review.answerState ?? fact.answerState) === 'unavailable'
+                ? {
+                    ...fact.scope,
+                    [fact.field]: revision.task.requirements.find((r) => r.id === fact.field)!
+                      .value,
+                  }
+                : fact.scope,
             reviewed: true,
             supersedes: fact.id,
             correctedBy: auth(res).user.id,
@@ -571,8 +636,9 @@ export function createApp(
             rejected: false,
           };
           result.facts.push(corrected);
+          correctedFact = corrected;
         }
-        learnFromReview(store, auth(res).user.id, c, result, fact, review.action);
+        learnFromReview(store, auth(res).user.id, c, result, fact, review.action, correctedFact);
         store.event(result.inquiryId || null, `fact_${review.action}`, fact.id);
       }
       const pending = pendingFacts(result).length > 0;

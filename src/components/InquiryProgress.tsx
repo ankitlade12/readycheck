@@ -36,7 +36,23 @@ export function InquiryProgress({
             <div key={inquiry.id} className="run-row">
               <div>
                 <span>{plan.recipients.find((r) => r.id === inquiry.candidateId)?.name}</span>
-                <small role="status">{inquiryLabels[inquiry.state]}</small>
+                <small role="status">
+                  {inquiry.state === 'observing' && inquiry.providerPhase
+                    ? {
+                        queued: 'Queued with CALL-E',
+                        calling: 'CALL-E is handling the call',
+                        finalizing: 'Call ended · preparing the transcript and answers',
+                        waiting: 'Waiting for a provider update',
+                      }[inquiry.providerPhase]
+                    : inquiryLabels[inquiry.state]}
+                </small>
+                <small>
+                  Updated{' '}
+                  {new Date(inquiry.updatedAt).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </small>
                 {inquiry.error ? <p role="status">{inquiry.error}</p> : null}
                 {inquiry.vendorId ? (
                   <details className="call-reference">

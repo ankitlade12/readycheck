@@ -188,6 +188,24 @@ describe('executable conversation policy (local rehearsal, no telephony)', () =>
   });
 });
 describe('literal price and contact boundaries', () => {
+  it('recognizes punctuation without truncating malformed or signed amounts', () => {
+    for (const quote of ['$60.', 'It will be $60.', '$60, including fees', 'USD 60.', '$60.00.']) {
+      assert.equal(explicitDollars(quote), 6000, quote);
+      const s = session();
+      s.reply('Yes');
+      assert.equal(s.reply(quote).kind, 'negotiate', quote);
+    }
+    for (const quote of [
+      '$1,23',
+      '$1, 000',
+      '$60.123',
+      '-$60',
+      '$1,,000',
+      '1,23 dollars',
+      '-60 dollars',
+    ])
+      assert.equal(explicitDollars(quote), null, quote);
+  });
   it('parses explicit dollars conservatively rather than guessing units or shorthand', () => {
     assert.equal(explicitDollars('$1,000.50'), 100050);
     assert.equal(explicitDollars('1000 dollars'), 100000);

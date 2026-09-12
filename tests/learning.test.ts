@@ -297,3 +297,31 @@ describe('bounded correction and account learning', () => {
     }
   });
 });
+
+it('correcting unrelated metadata does not reject a retained dollar repair', () => {
+  const s = setup();
+  try {
+    const fact = s.result.facts[0];
+    learnFromReview(s.store, 'owner', s.record, s.result, fact, 'correct', {
+      ...fact,
+      certainty: 'tentative',
+      conditions: ['Inspection needed'],
+      reviewed: true,
+    });
+    assert.equal(
+      learningSummary(s.store, 'owner').rules.find((r) => r.id === 'explicit_usd')!.status,
+      'active',
+    );
+    learnFromReview(s.store, 'owner', s.record, s.result, fact, 'correct', {
+      ...fact,
+      value: 3900,
+      reviewed: true,
+    });
+    assert.equal(
+      learningSummary(s.store, 'owner').rules.find((r) => r.id === 'explicit_usd')!.status,
+      'paused',
+    );
+  } finally {
+    s.store.close();
+  }
+});

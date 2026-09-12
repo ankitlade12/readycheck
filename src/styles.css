@@ -2311,6 +2311,8 @@ nav > button.active {
   border-radius: 7px;
   position: sticky;
   bottom: 0;
+  max-height: 75dvh;
+  overflow-y: auto;
   box-shadow: 0 -5px 20px #fffefa;
 }
 .correction-box p {

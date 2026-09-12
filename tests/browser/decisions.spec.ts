@@ -124,7 +124,7 @@ test('an excluded price interpretation is visible without presenting it as a con
   await expect(card).toContainText('Needs clarification');
   await card.getByRole('button', { name: 'View evidence' }).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText(
-    'Check the price interpretation',
+    'Review extraction warnings',
   );
   expect(await page.getByRole('dialog').evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
 });

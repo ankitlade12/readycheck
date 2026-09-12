@@ -23,6 +23,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS correction_feedback(owner_id TEXT NOT NULL REFERENCES users(id), case_id TEXT NOT NULL REFERENCES cases(id), source_id TEXT NOT NULL, fact_id TEXT NOT NULL, rule TEXT NOT NULL, outcome TEXT NOT NULL CHECK(outcome IN ('accepted','rejected')), updated_at TEXT NOT NULL, PRIMARY KEY(owner_id,case_id,source_id,fact_id,rule));
       CREATE INDEX IF NOT EXISTS cases_owner ON cases(owner_id,deleted);
       CREATE INDEX IF NOT EXISTS inquiries_state ON inquiries(state,next_poll);
+      CREATE INDEX IF NOT EXISTS events_inquiry_type ON events(inquiry_id,type);
     `);
   }
   transaction<T>(fn: () => T): T {

@@ -52,7 +52,7 @@ export function checkProgress(
       phase: 'attention',
       step: 1,
       label: 'Needs attention',
-      headline: 'We’re checking what happened to your call.',
+      headline: 'Your call needs recovery.',
       detail:
         'The call may have started. Your sequence is paused so this app does not send it again.',
       action: 'activity',

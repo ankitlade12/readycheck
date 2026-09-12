@@ -1,9 +1,11 @@
 /** Only unambiguous explicit dollar expressions. Unrecognized language remains unknown. */
 export function explicitDollars(text: string): number | null {
   if (/\b(?:CAD|AUD|Canadian|Australian|euros?|pounds?|cents?)\b/i.test(text)) return null;
+  // Do not turn a signed amount into a positive quote.
+  if (/[+-]\s*\$\s*\d/.test(text)) return null;
   const values = [
     ...text.matchAll(
-      /(?:\$\s*|\bUSD\s+)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![a-z\d.,])|\b(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s+(?:US\s+)?dollars?\b/gi,
+      /(?:\$\s*|\bUSD\s+)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?(?![a-z\d]|[.,](?:[.,]|\s*\d))|(?<![\w.,+-])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s+(?:US\s+)?dollars?\b/gi,
     ),
   ].map((m) =>
     Math.round(Number((m[1] || m[3]).replaceAll(',', '') + '.' + (m[2] || m[4] || '0')) * 100),

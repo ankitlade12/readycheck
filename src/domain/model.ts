@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const EVALUATOR_VERSION = '1.1.0';
-export const SCHEMA_VERSION = '1.1.0';
+export const EVALUATOR_VERSION = '1.2.0';
+export const SCHEMA_VERSION = '1.2.0';
 export const modeSchema = z.enum(['sample', 'recorded', 'live']);
 export type Mode = z.infer<typeof modeSchema>;
 export const kindSchema = z.enum([
@@ -85,6 +85,9 @@ export interface Fact {
   priceBasis?: 'all_in' | 'minimum' | 'estimate' | 'unit';
   unit?: string;
   conditions: string[];
+  answerState?: 'value' | 'unavailable' | 'unknown';
+  context?: string[];
+  evidenceTurns?: number[];
   reviewed: boolean;
   rejected?: boolean;
   supersedes?: string;
@@ -114,6 +117,7 @@ export interface CandidateResult {
   sources?: Record<string, Turn[]>;
   sourceTimes?: Record<string, string>;
   extractionWarnings?: string[];
+  conversationWarnings?: string[];
 }
 export interface Check {
   requirement: Requirement;
@@ -215,6 +219,9 @@ export interface Inquiry {
     | 'failed'
     | 'stopped';
   vendorId: string | null;
+  recoveryAttempted?: boolean;
+  providerPhase?: 'queued' | 'calling' | 'finalizing' | 'waiting';
+  recoveredVendorId?: string;
   error: string | null;
   createdAt: string;
   updatedAt: string;

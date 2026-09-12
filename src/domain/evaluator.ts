@@ -106,10 +106,19 @@ function compare(r: Requirement, f: Fact): { verdict: Check['verdict']; reason: 
   if (f.certainty !== 'confirmed')
     return unknown('The answer is tentative; confirmation is still needed.');
   if (f.conditions.length) return unknown(`Conditional answer: ${f.conditions.join('; ')}`);
+  if (f.answerState === 'unknown') return unknown('The recipient did not establish an answer.');
   if (r.kind === 'manual')
     return unknown(
       'This custom condition requires human judgment; automatic matching is unavailable.',
     );
+  if (
+    f.answerState === 'unavailable' ||
+    (f.value === false && ['window', 'deadline', 'exact'].includes(r.kind))
+  )
+    return {
+      verdict: 'fail',
+      reason: 'The recipient confirmed that the requested requirement cannot be met.',
+    };
   if (r.unit !== 'none' && f.unit !== r.unit)
     return unknown('The unit or currency is missing or does not match.');
   let passed: boolean;
@@ -276,7 +285,13 @@ export function evaluateCandidate(
     if (
       new Set(
         current.map((f) =>
-          JSON.stringify([normal(f.value), f.priceBasis, f.conditions, f.certainty]),
+          JSON.stringify([
+            normal(f.value),
+            f.priceBasis,
+            f.conditions,
+            f.certainty,
+            f.answerState ?? 'value',
+          ]),
         ),
       ).size > 1
     )

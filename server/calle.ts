@@ -7,6 +7,7 @@ import type {
   Turn,
 } from '../src/domain/model';
 import { valueSchema, SCHEMA_VERSION } from '../src/domain/model';
+import { reviewConversation, reversedDropoffRole } from '../src/domain/conversation-review';
 import { explicitDollars } from '../src/domain/money';
 import { repairableDollars } from '../src/domain/repairs';
 import type { Recipient } from './config';
@@ -55,10 +56,34 @@ export const resultSchema = {
           },
           turn_index: {
             type: 'integer',
-            description: 'Zero-based index of the recipient transcript turn; must be nonnegative.',
+            description:
+              'Zero-based position in the FULL transcript_turns array, counting bot, user, screening and greeting segments. The selected segment must be a recipient statement. Never count only user segments.',
+          },
+          evidence_turn_indices: {
+            type: 'array',
+            items: { type: 'integer' },
+            description:
+              'Positions in the FULL transcript including the question, original offer and confirmation needed to interpret this answer. Do not count only recipient turns.',
+          },
+          answer_state: {
+            type: 'string',
+            enum: ['value', 'unavailable', 'unknown'],
+            description:
+              'value for a stated value; unavailable only for an explicit inability to meet the requested requirement; unknown for uncertainty. For unavailable or unknown use value_json "false" if no typed value was stated. Never invent dates for a negative availability answer.',
+          },
+          context: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Supporting question context and explanation, not caveats. Put actual prerequisites or exceptions in conditions only.',
           },
           certainty: { type: 'string', enum: ['confirmed', 'tentative'] },
-          conditions: { type: 'array', items: { type: 'string' } },
+          conditions: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Actual unresolved caveats, prerequisites or exceptions only. A description of the preceding question or price revision belongs in context, not conditions.',
+          },
           unit: { type: 'string', enum: ['USD', 'count', 'minutes', 'none'] },
           price_basis: {
             type: 'string',
@@ -81,6 +106,9 @@ const extraction = z
             value_json: z.string().max(2000),
             quote: z.string().min(1).max(3000),
             turn_index: z.number().int().nonnegative(),
+            evidence_turn_indices: z.array(z.number().int().nonnegative()).max(20).optional(),
+            answer_state: z.enum(['value', 'unavailable', 'unknown']).optional(),
+            context: z.array(z.string().max(500)).max(10).optional(),
             certainty: z.enum(['confirmed', 'tentative']),
             conditions: z.array(z.string().max(500)).max(10),
             unit: z.enum(['USD', 'count', 'minutes', 'none']),
@@ -116,6 +144,7 @@ export class ProviderReadError extends Error {
 export interface CallTransport {
   create(payload: unknown, key: string): Promise<string>;
   read(id: string): Promise<unknown>;
+  recover?(originalBody: string, key: string): Promise<string>;
 }
 export class CalleTransport implements CallTransport {
   constructor(
@@ -123,6 +152,9 @@ export class CalleTransport implements CallTransport {
     private request: typeof fetch = fetch,
   ) {}
   async create(payload: unknown, key: string): Promise<string> {
+    return this.recover(JSON.stringify(payload), key);
+  }
+  async recover(originalBody: string, key: string): Promise<string> {
     let response: Response;
     try {
       response = await this.request(`${CALLE_ORIGIN}/v1/calls`, {
@@ -132,7 +164,7 @@ export class CalleTransport implements CallTransport {
           'Content-Type': 'application/json',
           'Idempotency-Key': key,
         },
-        body: JSON.stringify(payload),
+        body: originalBody,
         signal: AbortSignal.timeout(20000),
         redirect: 'error',
       });
@@ -221,6 +253,24 @@ export function providerStatus(value: unknown): string {
     ? value.status
     : 'invalid';
 }
+export function providerPhase(value: unknown): 'queued' | 'calling' | 'finalizing' | 'waiting' {
+  const status = providerStatus(value);
+  if (status === 'queued' || status === 'scheduled') return 'queued';
+  if (status !== 'in_progress') return 'waiting';
+  const recipients = (value as { recipients?: unknown }).recipients;
+  if (
+    Array.isArray(recipients) &&
+    recipients.length &&
+    recipients.every(
+      (r) =>
+        r &&
+        typeof r === 'object' &&
+        ['completed', 'failed', 'canceled', 'cancelled'].includes(r.status),
+    )
+  )
+    return 'finalizing';
+  return 'calling';
+}
 export function parseCallResult(
   body: unknown,
   task: Task,
@@ -271,6 +321,7 @@ export function parseCallResult(
       text: typeof t.text === 'string' ? t.text.slice(0, 10000) : '',
       offsetSeconds: typeof t.offset_seconds === 'number' ? t.offset_seconds : 0,
     }));
+  result.conversationWarnings = reviewConversation(task, result.transcript);
   const parsed = extraction.safeParse(rawRecipient.structured_result);
   if (!parsed.success) return result;
   result.disposition = parsed.data.disposition;
@@ -337,7 +388,28 @@ export function parseCallResult(
         )
         .map((r) => [r.id, r.value]),
     );
+    if (
+      f.answer_state === 'unavailable' ||
+      (value === false && ['window', 'deadline', 'exact'].includes(requirement.kind))
+    )
+      scope[f.field] = requirement.value;
     if (task.template === 'rental') scope.$acquisition = task.acquisition || 'rental';
+    const evidenceTurns = new Set([turn]);
+    for (const i of f.evidence_turn_indices || [])
+      if (i < result.transcript.length) evidenceTurns.add(i);
+    // Include the question next to a short confirmation without treating caller speech as proof.
+    for (
+      let i = turn - 1;
+      i >= 0 && i >= turn - 8 && result.transcript[i].speaker === 'caller';
+      i--
+    )
+      evidenceTurns.add(i);
+    const precedingQuestion = [...evidenceTurns]
+      .sort((a, b) => a - b)
+      .filter((i) => i < turn && result.transcript[i].speaker === 'caller')
+      .map((i) => result.transcript[i].text)
+      .join(' ');
+    const roleAmbiguous = f.field === 'dropoff' && reversedDropoffRole(precedingQuestion);
     result.facts.push({
       id: `${inquiryId}-${index}`,
       field: f.field,
@@ -361,6 +433,14 @@ export function parseCallResult(
       unit: f.unit,
       priceBasis: f.price_basis === 'not_applicable' ? undefined : f.price_basis,
       conditions: f.conditions,
+      answerState: roleAmbiguous
+        ? 'unknown'
+        : (f.answer_state ??
+          (value === false && ['window', 'deadline', 'exact'].includes(requirement.kind)
+            ? 'unavailable'
+            : 'value')),
+      context: f.context || [],
+      evidenceTurns: [...evidenceTurns].sort((a, b) => a - b),
       reviewed: false,
       scope,
       ...(repairs.length ? { repairs } : {}),
@@ -388,10 +468,16 @@ export function mergeResults(
   fresh: CandidateResult,
 ): CandidateResult {
   if (!old) return fresh;
+  const facts = new Map(old.facts.map((f) => [f.id, f]));
+  for (const fact of fresh.facts) if (!facts.has(fact.id)) facts.set(fact.id, fact);
   return {
     ...fresh,
     extractionWarnings: [...(old.extractionWarnings || []), ...(fresh.extractionWarnings || [])],
-    facts: [...old.facts, ...fresh.facts],
+    // Existing reviews win when the same provider result is delivered again.
+    facts: [...facts.values()],
+    conversationWarnings: [
+      ...new Set([...(old.conversationWarnings || []), ...(fresh.conversationWarnings || [])]),
+    ],
     sources: { ...old.sources, [old.sourceId]: old.transcript, ...fresh.sources },
     sourceTimes: {
       ...old.sourceTimes,

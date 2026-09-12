@@ -408,3 +408,106 @@ describe('HTTP → ownership → durable case flow', () => {
     }
   });
 });
+
+it('audits metadata corrections and rejects caller citations, silent edits and supersession cycles', async () => {
+  const h = await harness();
+  try {
+    const client = h.client();
+    const session = await client.request('/api/session');
+    const { data: c } = await client.request('/api/cases', 'POST', {
+      task: defaultTask('repair'),
+      mode: 'sample',
+    });
+    const task = c.revisions[0].task;
+    const value = task.requirements.find((r: { id: string }) => r.id === 'deadline').value;
+    const result = parseCallResult(
+      {
+        recipients: [
+          {
+            structured_result: {
+              disposition: 'answered',
+              facts: [
+                {
+                  field: 'deadline',
+                  value_json: JSON.stringify(value),
+                  quote: 'Yes, it will be ready.',
+                  turn_index: 1,
+                  certainty: 'tentative',
+                  conditions: ['Asked about the requested deadline'],
+                  unit: 'none',
+                  price_basis: 'not_applicable',
+                },
+              ],
+            },
+            attempts: [
+              {
+                transcript_turns: [
+                  { speaker: 'bot', text: 'Can it be ready by the requested deadline?' },
+                  { speaker: 'user', text: 'Yes, it will be ready.' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      task,
+      {
+        id: 'test',
+        name: 'Synthetic shop',
+        phone: '+12025550101',
+        consentRef: 'fixture',
+        timezone: 'UTC',
+      },
+      'metadata-fixture',
+      c.createdAt,
+    );
+    c.mode = 'live';
+    c.revisions[0].results = [result];
+    h.store.saveCase(session.data.user.id, c);
+    const original = JSON.parse(JSON.stringify(result.facts[0]));
+    const review = (entry: object) =>
+      client.request(`/api/cases/${c.id}/review`, 'POST', {
+        version: 1,
+        candidateId: result.id,
+        reviews: [{ factId: original.id, ...entry }],
+      });
+    assert.equal((await review({ action: 'confirm', conditions: [] })).status, 400);
+    assert.equal(
+      (await review({ action: 'correct', value, reason: 'Wrong source', turn: 0 })).status,
+      400,
+    );
+    assert.equal(
+      (await review({ action: 'correct', value, reason: 'Outside source', evidenceTurns: [999] }))
+        .status,
+      400,
+    );
+    const fixed = await review({
+      action: 'correct',
+      value,
+      reason:
+        'The recipient confirms the deadline; the extraction put the question description in conditions.',
+      certainty: 'confirmed',
+      conditions: [],
+      context: original.conditions,
+      answerState: 'value',
+      turn: 1,
+      evidenceTurns: [0, 1],
+    });
+    assert.equal(fixed.status, 200);
+    const saved = h.store.getCase(c.id, session.data.user.id)!.revisions[0].results[0];
+    assert.deepEqual(saved.facts[0], original);
+    assert.equal(saved.facts[1].supersedes, original.id);
+    assert.deepEqual(saved.facts[1].conditions, []);
+    assert.deepEqual(saved.facts[1].context, original.conditions);
+    const { evaluateCandidate } = await import('../src/domain/evaluator');
+    assert.equal(
+      evaluateCandidate(task, saved).checks.find((check) => check.requirement.id === 'deadline')!
+        .verdict,
+      'pass',
+    );
+    assert.equal((await review({ action: 'confirm', supersedes: saved.facts[1].id })).status, 409);
+    assert.equal(h.liveCalls, 0);
+  } finally {
+    await h.close();
+  }
+});

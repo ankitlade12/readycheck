@@ -152,3 +152,30 @@ describe('CALL-E result-schema compatibility and rejection diagnostics', () => {
     await assert.rejects(() => transport.create({}, 'key'), DispatchUnknown);
   });
 });
+
+it('preserves raw bytes when recovering a saved request instead of reserializing it', async () => {
+  const body = '{ "task": "Synthetic test", "metadata": {"id":"original"} }';
+  let requests = 0;
+  const transport = new CalleTransport('fake', async (_url, init) => {
+    requests++;
+    assert.equal(init!.body, body);
+    assert.equal(new Headers(init!.headers).get('Idempotency-Key'), 'original-key');
+    return Response.json({ id: 'call_original' });
+  });
+  assert.equal(await transport.recover(body, 'original-key'), 'call_original');
+  assert.equal(requests, 1);
+});
+
+it('distinguishes queueing and result preparation from provider call handling', async () => {
+  const { providerPhase } = await import('../server/calle');
+  assert.equal(providerPhase({ status: 'queued' }), 'queued');
+  assert.equal(
+    providerPhase({ status: 'in_progress', recipients: [{ status: 'completed' }] }),
+    'finalizing',
+  );
+  assert.equal(
+    providerPhase({ status: 'in_progress', recipients: [{ status: 'in_progress' }] }),
+    'calling',
+  );
+  assert.equal(providerPhase({ status: 'undocumented' }), 'waiting');
+});

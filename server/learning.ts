@@ -13,7 +13,7 @@ const instructions: Record<RepairRule, string> = {
   explicit_usd:
     'Extraction reminder from reviewed corrections: convert the actual USD amount to integer cents (multiply dollars by 100). Never substitute the requested budget. Preserve estimates, conditions and price basis.',
   source_reference:
-    'Extraction reminder from reviewed corrections: use the zero-based index of the recipient turn containing the exact quote. Do not cite the caller or remove qualifications.',
+    'Extraction reminder from reviewed corrections: use the zero-based index in the full transcript array, counting both caller and recipient segments, for the recipient segment containing the exact quote. Never count recipient segments alone. Do not cite the caller or remove qualifications.',
 };
 
 export function learningSummary(store: Store, owner: string): LearningSummary {
@@ -63,6 +63,7 @@ export function learnFromReview(
   result: CandidateResult,
   fact: Fact,
   action: 'confirm' | 'reject' | 'correct',
+  corrected?: Fact,
 ) {
   if (record.mode !== 'live' || result.mode !== 'live') return;
   const source =
@@ -75,6 +76,12 @@ export function learnFromReview(
     return;
   for (const repair of fact.repairs || []) {
     if (!repairRules.includes(repair.rule)) continue;
+    const retained =
+      action === 'correct' &&
+      corrected &&
+      (repair.rule === 'explicit_usd'
+        ? corrected.value === fact.value
+        : corrected.turn === fact.turn);
     store.db
       .prepare(
         `INSERT INTO correction_feedback(owner_id,case_id,source_id,fact_id,rule,outcome,updated_at)
@@ -87,7 +94,7 @@ export function learnFromReview(
         fact.sourceId,
         fact.id,
         repair.rule,
-        action === 'confirm' ? 'accepted' : 'rejected',
+        action === 'confirm' || retained ? 'accepted' : 'rejected',
         new Date().toISOString(),
       );
   }

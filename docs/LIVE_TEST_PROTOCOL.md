@@ -39,7 +39,8 @@ Use separate consenting tests for no answer and a fully supported case. Disable 
 A create timeout does not prove that no call happened. Keep the inquiry and reservation paused; do not redial or generate a replacement key.
 
 - With an API task ID, use the app's reconciliation action. It reads the existing task and attaches it only when `readycheck_inquiry_id` matches.
-- Without an ID, use provider/operator reconciliation. The documented lost-response recovery used in development replays the **exact persisted body and original idempotency key**. This is an operator action, not an automatic app retry. Verify the current provider contract before attempting it; never rebuild the payload or invent a key.
+- Without an ID, the app offers **Recover original request once** while the approved plan is current, live access is enabled and recipient routing, consent and calling hours still match. It replays the **exact persisted body and original idempotency key**, using the [documented recovery contract](https://docs.heycall-e.com/calls#recover-after-a-restart-or-lost-response). If the first request never arrived, this can start the approved call now. It retains the existing budget reservation. A persisted marker blocks another replay, including after a restart.
+- If request recovery fails, use the saved call reference for read-only reconciliation or contact the provider. Expired, changed, stopped or disabled requests permit ID reconciliation only. Never rebuild the payload or invent a replacement key.
 - Once the ID is known, refresh/restart should resume reads of that ID. Use mocked fault tests for deliberate response-loss experiments.
 - “Stop future calls” stops queued work; it does not cancel an active provider call.
 
