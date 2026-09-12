@@ -33,6 +33,9 @@ export function Home({
     [template, setTemplate] = useState<Task['template']>('repair'),
     [query, setQuery] = useState('');
   const visible = cases.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()));
+  const attention = cases.filter((c) => ['review', 'attention'].includes(c.progress?.phase || ''));
+  const resume =
+    attention[0] || cases.find((c) => !['completed', 'stopped'].includes(c.progress?.phase || ''));
   return (
     <div className="home-page">
       {!savedOnly ? (
@@ -116,6 +119,25 @@ export function Home({
               </button>
             </div>
           </section>
+          {resume ? (
+            <section className="resume-check" aria-label="Continue your check">
+              <div>
+                <span className="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
+                <h2>{resume.title}</h2>
+                <p>
+                  {resume.progress?.headline ||
+                    'Your request and saved answers are ready when you are.'}
+                </p>
+              </div>
+              <button
+                className="button secondary"
+                onClick={() => onOpen(resume.id)}
+                disabled={busy}
+              >
+                Resume check <ArrowRight size={15} />
+              </button>
+            </section>
+          ) : null}
           <div className="section-title">
             <h2>Start with something familiar</h2>
             <span>Three tasks. One thoughtful workflow.</span>
@@ -156,6 +178,27 @@ export function Home({
         </section>
       )}
       <section className="recent-section">
+        {cases.length ? (
+          <div className="workspace-stats" aria-label="Workspace summary">
+            <div>
+              <strong>
+                {
+                  cases.filter((c) => !['completed', 'stopped'].includes(c.progress?.phase || ''))
+                    .length
+                }
+              </strong>
+              <span>Open checks</span>
+            </div>
+            <div>
+              <strong>{attention.length}</strong>
+              <span>Need your review</span>
+            </div>
+            <div>
+              <strong>{cases.filter((c) => c.progress?.phase === 'completed').length}</strong>
+              <span>Completed by you</span>
+            </div>
+          </div>
+        ) : null}
         <div className="section-title">
           <h2>
             {savedOnly ? 'Saved checks' : 'Your recent checks'}
@@ -194,12 +237,15 @@ export function Home({
                       </span>
                     </div>
                   </div>
-                  <span className={`case-state ${c.resultCount ? 'has-results' : ''}`}>
-                    {c.outcome
-                      ? c.outcome.replaceAll('_', ' ')
-                      : c.resultCount
-                        ? `${c.resultCount} options checked`
-                        : 'Draft'}
+                  <span
+                    className={`case-state ${c.resultCount ? 'has-results' : ''} phase-${c.progress?.phase || 'ready'}`}
+                  >
+                    {c.progress?.label ||
+                      (c.outcome
+                        ? c.outcome.replaceAll('_', ' ')
+                        : c.resultCount
+                          ? `${c.resultCount} options checked`
+                          : 'Draft')}
                   </span>
                   <span className="case-date">
                     {new Date(c.updatedAt).toLocaleDateString('en-US', {

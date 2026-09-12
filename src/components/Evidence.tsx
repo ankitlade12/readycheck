@@ -18,6 +18,7 @@ export function Evidence({
   onClose,
   onReview,
   busy,
+  onAcknowledge,
 }: {
   candidate: CandidateResult;
   evaluation: Evaluation;
@@ -25,6 +26,7 @@ export function Evidence({
   onClose: () => void;
   onReview: (review: FactReview) => void;
   busy: boolean;
+  onAcknowledge?: () => void;
 }) {
   const [tab, setTab] = useState<'checks' | 'transcript'>('checks'),
     [correction, setCorrection] = useState<Fact | null>(null),
@@ -244,6 +246,11 @@ export function Evidence({
           ))}
         </div>
       )}
+      {onAcknowledge ? (
+        <button className="button primary full" disabled={busy} onClick={onAcknowledge}>
+          Finish reviewing this call <Check size={15} />
+        </button>
+      ) : null}
       {correction ? (
         <div className="correction-box">
           <div className="panel-title">

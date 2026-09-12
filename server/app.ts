@@ -39,6 +39,7 @@ import {
 } from './inquiries';
 import { Store } from './store';
 import { ConnectionVerifier } from './connection';
+import { checkProgress, pendingFacts } from '../src/domain/progress';
 import { learnFromReview, learningSummary } from './learning';
 
 export function createApp(
@@ -222,6 +223,7 @@ export function createApp(
         template: c.revisions.at(-1)!.task.template,
         resultCount: c.revisions.at(-1)!.results.length,
         outcome: c.outcomes.at(-1)?.state || null,
+        progress: checkProgress(c, casePlans(store, c.id, auth(res).user.id)),
       })),
     ),
   );
@@ -573,12 +575,7 @@ export function createApp(
         learnFromReview(store, auth(res).user.id, c, result, fact, review.action);
         store.event(result.inquiryId || null, `fact_${review.action}`, fact.id);
       }
-      const pending = result.facts.some(
-        (f) =>
-          !f.reviewed &&
-          !f.rejected &&
-          !result.facts.some((newer) => newer.supersedes === f.id && newer.reviewed),
-      );
+      const pending = pendingFacts(result).length > 0;
       if (!pending && result.inquiryId)
         store.db
           .prepare(
@@ -606,11 +603,7 @@ export function createApp(
     const result = c.revisions
       .find((r) => r.version === plan.version)
       ?.results.find((r) => r.inquiryId === input.inquiryId);
-    assert(
-      result && result.facts.every((f) => f.reviewed || f.rejected),
-      409,
-      'Review all extracted facts first.',
-    );
+    assert(result && pendingFacts(result).length === 0, 409, 'Review all extracted facts first.');
     store.db
       .prepare("UPDATE inquiries SET state='evaluated' WHERE id=? AND state='review_required'")
       .run(input.inquiryId);

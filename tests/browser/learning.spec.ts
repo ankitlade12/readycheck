@@ -122,13 +122,14 @@ test('a correction review changes durable account memory, and rejection pauses i
       .toBe('rejected');
     await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Open navigation' }).click();
-    await page.getByRole('button', { name: 'Connection', exact: true }).click();
+    await page.getByRole('button', { name: 'Learning', exact: true }).click();
     const learning = page.getByRole('region', { name: 'Learning from your reviews' });
     await expect(learning).toContainText('Paused after a rejected correction');
     expect(await page.getByRole('dialog').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
       true,
     );
-    await page.screenshot({ path: 'artifacts/learning-mobile.png', fullPage: true });
+    await learning.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: 'artifacts/learning-mobile.png' });
     await learning.getByRole('button', { name: 'Reset dollar amount corrections' }).click();
     await expect(learning).not.toContainText('Paused after a rejected correction');
     expect(store.db.prepare('SELECT COUNT(*) AS n FROM correction_feedback').get()!.n).toBe(0);

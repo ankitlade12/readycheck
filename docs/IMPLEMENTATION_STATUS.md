@@ -1,5 +1,9 @@
 # ReadyCheck implementation tracker
 
+## September 12 guided product flow and natural negotiation
+
+The workspace now shows a derived four-step journey, evidence review action and readable inquiry activity. The overview offers resume, review and completion counts from saved state. Learning has its own sidebar entry. A real policy 1.1 call returned 13 turns and one fact with a proposed source-index repair; its price response exposed the private ceiling. Policy 1.2 replaces that with price-first questioning and one polite request for flexibility, without accepting terms. Revised negotiation is locally tested but not live-verified.
+
 ## September 12 correction learning
 
 Implemented a bounded extraction repair pass, provenance in the evidence panel, account-scoped review memory, rejected-method suppression, fixed reminders in future call previews, and feedback inspection/reset controls. Review writes are transactional; learning changes invalidate old call previews without altering stored dispatch payloads. See `LEARNING.md`. This does not implement model training or real-time speech control, and no additional live validation is claimed.
@@ -10,7 +14,7 @@ Approved calls now include a versioned conversation policy instead of the accumu
 
 ## Latest verification boundary
 
-The previously uncertain inquiry was recovered with its exact stored body and original idempotency key. It returned one completed attempt and 35 turns; the app stores the task ID and three facts for review. The transcript confirms continued questioning after a $1,000 quote against $40, while the extracted cents were correct. Live calling is disabled. The current source passes 140 tests; the earlier container passed 14 browser flows. Railway deployment still requires an active plan. See `VERIFICATION.md` and `CALLE_CONTROL_REQUEST.md`.
+The current source passes 157 tests, 45 synthetic evaluator expectations and 16 browser flows. The September 12 live result is saved for review, and calling is disabled. CALL-E still controls speech; policy 1.2 negotiation has only been rehearsed locally. The earlier Railway creation attempt was blocked by an expired trial; no public deployment has been created. See `VERIFICATION.md` and `CALLE_CONTROL_REQUEST.md`.
 
 ## September 9 decision guidance
 

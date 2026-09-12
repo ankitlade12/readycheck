@@ -13,7 +13,6 @@ import {
   Phone,
   Plus,
   RefreshCw,
-  Square,
   Trash2,
 } from 'lucide-react';
 import type { CaseDetail } from '../api';
@@ -21,6 +20,9 @@ import type { Plan, SessionInfo, Task } from '../domain/model';
 import { taskSchema } from '../domain/model';
 import { displayValue, rankResults, validateTask } from '../domain/evaluator';
 import { DecisionGuide } from './DecisionGuide';
+import { CheckJourney } from './CheckJourney';
+import { InquiryProgress } from './InquiryProgress';
+import { checkProgress, pendingFacts } from '../domain/progress';
 import { nextUsefulQuestion } from '../domain/decisions';
 import { sampleCandidates } from '../domain/samples';
 import { Requirements } from './Requirements';
@@ -119,6 +121,7 @@ export function Workspace({
         }));
   const chosen = selected.filter((id) => candidates.some((c) => c.id === id));
   const activePlans = record.plans.filter((p) => p.version === version);
+  const progress = checkProgress(record, activePlans, clock, version);
   const remaining = candidates.filter((c) => !revision.results.some((r) => r.id === c.id));
   const additions = chosen.filter((id) => remaining.some((c) => c.id === id));
   const canCheck =
@@ -204,6 +207,27 @@ export function Workspace({
           You’re viewing a saved revision. Its results belong to the requirements shown here.
         </div>
       ) : null}
+      <CheckJourney
+        progress={progress}
+        busy={busy}
+        readOnly={readOnly}
+        dirty={dirty}
+        onAction={() => {
+          if (progress.action === 'evidence' && progress.candidateId) {
+            setEvidence(progress.candidateId);
+            return;
+          }
+          const callStatus = ['calling', 'attention'].includes(progress.phase);
+          setTab(progress.action === 'activity' && !callStatus ? 'activity' : 'comparison');
+          requestAnimationFrame(() => {
+            const target = document.getElementById(
+              callStatus ? 'inquiry-progress' : 'comparison-results',
+            );
+            target?.scrollIntoView({ block: 'start' });
+            target?.focus({ preventScroll: true });
+          });
+        }}
+      />
       <div className="workspace-grid">
         <Requirements
           task={task}
@@ -215,7 +239,12 @@ export function Workspace({
           busy={busy}
           readOnly={readOnly}
         />
-        <section className="results-area" aria-label="Results">
+        <section
+          className="results-area"
+          id="comparison-results"
+          tabIndex={-1}
+          aria-label="Results"
+        >
           <div className="results-top">
             <div className="tabs">
               <button
@@ -242,6 +271,23 @@ export function Workspace({
           </div>
           {tab === 'comparison' ? (
             <>
+              {activePlans.length ? (
+                <InquiryProgress
+                  plans={activePlans}
+                  busy={busy}
+                  stopped={record.stopped}
+                  onReview={(id) => {
+                    const result = revision.results.find((r) => r.inquiryId === id);
+                    if (result) setEvidence(result.id);
+                  }}
+                  onRecover={(id) => {
+                    setReconciling(id);
+                    setVendorId('');
+                  }}
+                  onContinue={actions.continue}
+                  onStop={actions.stop}
+                />
+              ) : null}
               {dirty ? (
                 <EmptyState title="Save your revised requirements.">
                   Your draft is preserved in this browser. Save a new revision to compare the
@@ -520,84 +566,6 @@ export function Workspace({
                   </div>
                 </>
               )}
-              {activePlans.length ? (
-                <div className="live-runs">
-                  <h3>Inquiry progress</h3>
-                  {activePlans.map((p) => (
-                    <div className="run-card" key={p.id}>
-                      <strong>
-                        {p.followupFor ? 'Targeted follow-up' : 'Approved sequence'} · {p.status}
-                      </strong>
-                      {p.inquiries.map((i) => (
-                        <div key={i.id} className="run-row">
-                          <div>
-                            <span>{p.recipients.find((r) => r.id === i.candidateId)?.name}</span>
-                            <small>
-                              {i.state.replaceAll('_', ' ')}
-                              {i.vendorId ? ` · ${i.vendorId}` : ''}
-                            </small>
-                            {i.error ? <p role="status">{i.error}</p> : null}
-                          </div>
-                          {i.state === 'dispatch_unknown' ? (
-                            <button
-                              className="text-button"
-                              onClick={() => {
-                                setReconciling(i.id);
-                                setVendorId('');
-                              }}
-                            >
-                              Reconcile existing call
-                            </button>
-                          ) : null}
-                          {i.state === 'review_required' ? (
-                            <button
-                              className="text-button"
-                              onClick={() => {
-                                const r = revision.results.find((r) => r.inquiryId === i.id);
-                                if (r?.facts.length) setEvidence(r.id);
-                                else actions.acknowledge(i.id);
-                              }}
-                            >
-                              Review result
-                            </button>
-                          ) : null}
-                        </div>
-                      ))}
-                      {p.status === 'approved' && p.inquiries.some((i) => i.state === 'queued') ? (
-                        <button
-                          className="button secondary"
-                          disabled={
-                            busy ||
-                            p.inquiries.some((i) =>
-                              [
-                                'claimed',
-                                'dispatch_unknown',
-                                'submitted',
-                                'observing',
-                                'review_required',
-                              ].includes(i.state),
-                            )
-                          }
-                          onClick={() => actions.continue(p.id)}
-                        >
-                          Continue approved sequence
-                          <ArrowRight size={14} />
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                  {!record.stopped ? (
-                    <button className="text-button danger" disabled={busy} onClick={actions.stop}>
-                      <Square size={13} />
-                      Stop future calls
-                    </button>
-                  ) : (
-                    <p className="muted">
-                      Future dispatch is stopped. An active call may still finish.
-                    </p>
-                  )}
-                </div>
-              ) : null}
             </>
           ) : (
             <div className="activity-panel">
@@ -655,6 +623,17 @@ export function Workspace({
           onClose={() => setEvidence(null)}
           busy={busy}
           onReview={(review) => actions.review(evidenceEntry.candidate.id, version, review)}
+          onAcknowledge={
+            evidenceEntry.candidate.inquiryId &&
+            !pendingFacts(evidenceEntry.candidate).length &&
+            activePlans.some((p) =>
+              p.inquiries.some(
+                (i) => i.id === evidenceEntry.candidate.inquiryId && i.state === 'review_required',
+              ),
+            )
+              ? () => actions.acknowledge(evidenceEntry.candidate.inquiryId!)
+              : undefined
+          }
         />
       ) : null}
       {samplePreview ? (
@@ -766,8 +745,9 @@ export function Workspace({
           <blockquote className="disclosure">{preview.disclosure}</blockquote>
           <h3>Questions and requirements</h3>
           <p className="muted small">
-            The caller is instructed to ask only what is still needed, respect unknown answers, and
-            end when a must-have fails. CALL-E controls the spoken conversation.
+            Your budget stays private. The caller asks for their price first and may ask once for a
+            better price. It does not accept a quote or book anything. CALL-E controls the spoken
+            conversation.
           </p>
           <ol className="question-list">
             {preview.questions.map((q, i) => (

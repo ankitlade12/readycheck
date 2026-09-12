@@ -15,7 +15,7 @@ Feedback is scoped to the owning account and a source fact. Confirming an automa
 
 Rejecting or manually editing a repaired fact marks its repair method paused for that account. Future extractions exclude facts needing that method, while valid unmodified facts still work. The corresponding reminder is removed from new plans. A rejection cannot be reversed by replaying an older acceptance. There is no claim that one accepted correction establishes general accuracy.
 
-Open **Connection → Learning from your reviews** to inspect counts and reset a method. Reset removes its feedback and resumes proposals awaiting review. It does not change saved evidence. Deleting a case also removes its learning contributions; methods are recalculated from remaining cases.
+Open **Learning** in the sidebar (also accessible from Connection) to inspect counts and reset a method. Reset removes its feedback and resumes proposals awaiting review. It does not change saved evidence. Deleting a case also removes its learning contributions; methods are recalculated from remaining cases.
 
 Every plan includes a fingerprint of the correction policy version and active/paused methods. If those change, approval and dispatch require a new preview. Existing stored call payloads and idempotency keys remain immutable. An in-flight call is not canceled or rewritten by feedback. New recipient requests still need their normal approval.
 

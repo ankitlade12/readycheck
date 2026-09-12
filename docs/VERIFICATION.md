@@ -1,5 +1,13 @@
 # Local verification record
 
+## September 12 product flow and private-budget negotiation
+
+**157 automated tests across 18 suites**, **45/45 synthetic evaluator expectations**, TypeScript, production build and all **16 browser flows** passed. Browser tests used an isolated preview with calling disabled. The product now derives check progress from inquiry states, pending evidence and user-recorded outcomes; it adds a resume card, clearer call activity, an explicit zero-fact review action and a dedicated Learning navigation item. Passing evidence and shortlisting never mark the task completed.
+
+One new consenting repair test was approved through the app using conversation policy **1.1.0**. The create response exceeded the local deadline; one operator replay with the exact stored body and original idempotency key recovered the original operation, which was reconciled by matching metadata. No replacement key or additional inquiry was introduced. It completed with **13 transcript turns**, **one extracted fact** and **one proposed source-index correction**. The result remains awaiting human review; no successful repair or matching option is claimed. Calling was disabled again after the test; private transcripts and recordings are excluded from Git.
+
+The transcript showed the caller ending after a $1,000 quote, while announcing the $40 maximum and bundling price questions. In response to user feedback, policy **1.2.0** keeps the maximum private, asks for the shop’s price first, allows one polite request for flexibility and respects a firm price or refusal. It never accepts a quote or books work. Extraction instructions preserve uncertainty when a bare amount does not establish a firm all-in total. Five fictional controller rehearsals and regression tests cover this change; **the revised negotiation has not been validated in another real call**. CALL-E still controls live speech, so local tests cannot prove live adherence.
+
 ## September 12 correction learning
 
 **150 automated tests across 17 suites**, **45/45 synthetic evaluator expectations**, TypeScript and the production build passed. All **16 browser flows** passed against an isolated local production preview with calling disabled. The new browser flow owns a separate in-memory database and fake transport; it verifies a proposed correction, confirmation, reload, a manual edit that pauses the method, and reset through the account learning panel. No provider requests were made by that flow.

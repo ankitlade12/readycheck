@@ -6,6 +6,7 @@ import {
   respond,
   explicitDollars,
   contactBoundary,
+  conversationInstructions,
 } from '../src/domain/conversation';
 import { defaultTask } from '../src/domain/templates';
 import { sampleResults } from '../src/domain/samples';
@@ -25,6 +26,14 @@ function session(fields?: string[]) {
   };
 }
 describe('executable conversation policy (local rehearsal, no telephony)', () => {
+  it('compiles private-budget negotiation and single spoken questions without contradictory instructions', () => {
+    const text = conversationInstructions(buildConversationPolicy(task()));
+    assert.match(text, /Never announce it/);
+    assert.match(text, /at most 1 polite request/);
+    assert.match(text, /What would that cost\?/);
+    assert.doesNotMatch(text, /Never book, pay, negotiate|Say it exceeds the limit/);
+    assert.doesNotMatch(text, /Is this a firm price or an estimate\?/);
+  });
   it('stops on unknown core fit and cannot be restarted by another reply', () => {
     const s = session();
     assert.equal(s.current.action.field, 'service');
@@ -32,7 +41,7 @@ describe('executable conversation policy (local rehearsal, no telephony)', () =>
     assert.equal(s.reply('Yes').reason, 'already_ended');
     assert.equal(s.current.action.text, '');
   });
-  it('states the hard limit and stops on the reported thousand-dollar quote', () => {
+  it('keeps the maximum private and asks once for a better price', () => {
     for (const reply of [
       '$1,000',
       'one thousand dollars',
@@ -43,19 +52,64 @@ describe('executable conversation policy (local rehearsal, no telephony)', () =>
       const s = session();
       assert.equal(s.reply('Yes, we repair those').field, 'budget');
       const action = s.reply(reply);
-      assert.equal(action.reason, 'hard_limit_exceeded');
-      assert.match(action.text, /\$40 limit/);
+      assert.equal(action.reason, 'request_better_price');
+      assert.equal(action.kind, 'negotiate');
+      assert.match(action.text, /flexibility/);
+      assert.doesNotMatch(action.text, /40|cap|limit|maximum/);
+      const final = s.reply('$900 including fees');
+      assert.equal(final.reason, 'price_still_too_high');
+      assert.doesNotMatch(final.text, /40|cap|limit|maximum/);
       assert.equal(s.policy.task.requirements.find((r) => r.id === 'budget')!.value, 4000);
     }
   });
-  it('answers a budget question from context without consuming or repeating the pending question', () => {
+  it('asks for their price without disclosing the budget or losing the pending field', () => {
     const s = session();
     s.reply('Yes');
     assert.equal(s.reply("What's your budget?").kind, 'answer');
-    assert.match(s.current.action.text, /\$40/);
+    assert.doesNotMatch(s.current.action.text, /40|cap|limit|maximum/);
+    assert.match(s.current.action.text, /hear your price first/);
     assert.equal(s.current.state.pending, 'budget');
     assert.equal(s.reply('$38 including all taxes and fees').field, 'deadline');
     assert.deepEqual(s.current.state.resolved, { service: 'answered', budget: 'answered' });
+  });
+  it('continues with an affordable revised total but never accepts or books', () => {
+    const s = session();
+    s.reply('Yes');
+    s.reply('$60 including taxes and fees');
+    const action = s.reply('$38 including all taxes and fees');
+    assert.equal(action.field, 'deadline');
+    assert.equal(s.current.state.resolved.budget, 'answered');
+    assert.doesNotMatch(action.text, /accept|book|deal|40/);
+    assert.equal(s.policy.task.requirements.find((r) => r.id === 'budget')!.value, 4000);
+  });
+  it('ends negotiation on a firm price, refusal, uncertainty or missing amount', () => {
+    for (const reply of [
+      'No, that is our price',
+      'The price is firm',
+      "I don't know",
+      'Please stop',
+    ]) {
+      const s = session();
+      s.reply('Yes');
+      s.reply('$60');
+      assert.equal(s.reply(reply).kind, 'end');
+      assert.equal(s.reply('$38 including fees').reason, 'already_ended');
+    }
+    const s = session();
+    s.reply('Yes');
+    s.reply('$60');
+    assert.equal(s.reply('Yes, we have some flexibility').kind, 'clarify');
+    assert.equal(s.reply('Maybe, it depends').kind, 'end');
+  });
+  it('does not bargain after an explicit no-discount quote or repeated demands for the maximum', () => {
+    const s = session();
+    s.reply('Yes');
+    assert.equal(s.reply('$60, non-negotiable').reason, 'price_is_firm');
+    const other = session();
+    other.reply('Yes');
+    other.reply("What's your budget?");
+    assert.equal(other.reply('How much can you spend?').reason, 'budget_privacy_stop');
+    assert.doesNotMatch(other.current.action.text, /40/);
   });
   it('handles identity questions without inventing a human identity', () => {
     const s = session();

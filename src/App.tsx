@@ -19,6 +19,7 @@ import type { Plan, SessionInfo, Task } from './domain/model';
 import { defaultTask } from './domain/templates';
 import { Home } from './components/Home';
 import { Connection } from './components/Connection';
+import { Learning } from './components/Learning';
 import { NewCheck, type NewCheckStart } from './components/NewCheck';
 import { Workspace, type WorkspaceActions } from './components/Workspace';
 import { InlineError, Logo, Modal } from './components/Shared';
@@ -31,7 +32,7 @@ export default function App() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
-    [modal, setModal] = useState<'auth' | 'connection' | 'help' | null>(null),
+    [modal, setModal] = useState<'auth' | 'connection' | 'learning' | 'help' | null>(null),
     [preview, setPreview] = useState<Plan | null>(null),
     [mobileNav, setMobileNav] = useState(false);
   const [newCheck, setNewCheck] = useState<NewCheckStart | null>(null);
@@ -294,6 +295,9 @@ export default function App() {
               className={`connection-dot ${session?.connection.configured ? 'connected' : ''}`}
             />
           </button>
+          <button onClick={() => setModal('learning')}>
+            <Sparkles size={18} /> Learning
+          </button>
         </nav>
         <div className="sidebar-note">
           <span className="sidebar-note-icon">
@@ -358,7 +362,7 @@ export default function App() {
             Your workspace<span className="breadcrumb-divider">/</span>
             <strong>
               {view === 'check'
-                ? 'A thoughtful check'
+                ? active?.title || 'Your check'
                 : view === 'saved'
                   ? 'Saved checks'
                   : 'Overview'}
@@ -472,6 +476,7 @@ export default function App() {
           onClose={() => setModal(null)}
           onCreateAccount={() => setModal('auth')}
           onRefresh={async () => updateSession(await api<SessionInfo>('/session'))}
+          onLearning={() => setModal('learning')}
           onStart={() => {
             setModal(null);
             startCheck('repair', undefined, 'live');
@@ -522,6 +527,11 @@ export default function App() {
             Got it
             <Check size={15} />
           </button>
+        </Modal>
+      ) : null}
+      {modal === 'learning' ? (
+        <Modal title="Your learning history" onClose={() => setModal(null)}>
+          <Learning />
         </Modal>
       ) : null}
       <div className="sr-only" role="status" aria-live="polite">

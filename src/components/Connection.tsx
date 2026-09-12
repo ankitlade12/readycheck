@@ -3,7 +3,6 @@ import { ArrowRight, Check, Circle, Copy, RefreshCw, ShieldCheck } from 'lucide-
 import type { ReadAccessCheck, SessionInfo } from '../domain/model';
 import { api } from '../api';
 import { ExternalLink, InlineError, Modal } from './Shared';
-import { Learning } from './Learning';
 
 export function Connection({
   session,
@@ -12,6 +11,7 @@ export function Connection({
   onStart,
   onRefresh,
   busy,
+  onLearning,
 }: {
   session: SessionInfo;
   onClose: () => void;
@@ -19,6 +19,7 @@ export function Connection({
   onStart: () => void;
   onRefresh: () => Promise<void>;
   busy: boolean;
+  onLearning: () => void;
 }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -138,7 +139,9 @@ export function Connection({
         ) : null}
       </section>
       {error ? <InlineError message={error} /> : null}
-      <Learning />
+      <button className="text-button" onClick={onLearning}>
+        Review your correction memory <ArrowRight size={14} />
+      </button>
       <div className="account-id">
         <label>
           Account ID for server authorization

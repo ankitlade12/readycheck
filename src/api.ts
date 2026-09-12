@@ -1,4 +1,5 @@
 import type { CaseRecord, Plan, SessionInfo } from './domain/model';
+import type { CheckProgress } from './domain/progress';
 export type CaseDetail = CaseRecord & { plans: Plan[] };
 export interface CaseSummary {
   id: string;
@@ -9,6 +10,7 @@ export interface CaseSummary {
   template: 'repair' | 'rental' | 'venue';
   resultCount: number;
   outcome: string | null;
+  progress?: CheckProgress;
 }
 let csrf = '';
 export function setSession(session: SessionInfo) {
