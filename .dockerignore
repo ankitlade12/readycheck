@@ -1,0 +1,9 @@
+node_modules
+data
+artifacts
+.env
+.env.*
+.git
+*.docx
+*.pdf
+ReadyCheck_Review_and_Build_Blueprint.md
