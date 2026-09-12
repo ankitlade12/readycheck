@@ -3,7 +3,7 @@ export { explicitDollars } from './money';
 import type { CandidateResult, Requirement, Task } from './model';
 import { validateTask } from './evaluator';
 
-export const CONVERSATION_POLICY_VERSION = '1.2.0';
+export const CONVERSATION_POLICY_VERSION = '1.2.1';
 export const opening =
   'Hi, I’m ReadyCheck’s AI assistant. Have you got a moment for a quick question?';
 export interface ConversationPolicy {

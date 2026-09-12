@@ -60,6 +60,37 @@ describe('CALL-E HTTP adapter with injected no-network requests', () => {
 });
 
 describe('CALL-E result-schema compatibility and rejection diagnostics', () => {
+  it('restricts both extraction schemas to this call’s approved fields without leaking scope between calls', async () => {
+    const { callPayload } = await import('../server/calle');
+    const recipient = {
+      id: 'synthetic',
+      name: 'Test shop',
+      phone: '+12025550101',
+      consentRef: 'fixture',
+      timezone: 'UTC',
+    };
+    const initial = callPayload('Synthetic inquiry', recipient, 'initial', [
+      'service',
+      'budget',
+      'dropoff',
+    ]);
+    const followup = callPayload('Synthetic follow-up', recipient, 'followup', ['budget']);
+    for (const schema of [initial.result_schema, initial.recipient_result_schema]) {
+      assert.deepEqual(schema.properties.facts.items.properties.field.enum, [
+        'service',
+        'budget',
+        'dropoff',
+      ]);
+      assert.ok(
+        !schema.properties.facts.items.properties.field.enum.includes('price_final_all_in'),
+      );
+    }
+    assert.deepEqual(
+      followup.recipient_result_schema.properties.facts.items.properties.field.enum,
+      ['budget'],
+    );
+    assert.throws(() => callPayload('No fields', recipient, 'invalid', []));
+  });
   it('uses only the documented schema subset while preserving local validation', async () => {
     const { resultSchema } = await import('../server/calle');
     const allowed = new Set([

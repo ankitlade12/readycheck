@@ -4,7 +4,7 @@ The standalone source is published at [ankitlade12/readycheck](https://github.co
 
 ## Next steps
 
-1. Validate policy 1.2 negotiation in an approved consenting call using the [live protocol](LIVE_TEST_PROTOCOL.md). Keep the latest result and any limitations in the [verification record](VERIFICATION.md).
+1. Resolve the observed live conversation failures and validate negotiation in an approved consenting call using the [live protocol](LIVE_TEST_PROTOCOL.md). Keep the latest result and any limitations in the [verification record](VERIFICATION.md).
 2. Provision a persistent host, then verify signup, saved cases, restart persistence and judge access using the [deployment guide](DEPLOYMENT.md). The earlier Railway attempt was blocked by an expired trial; a usable hosting account is still needed.
 3. Prepare a fresh contribution from the current commit for [Awesome Phone Call Agents](https://github.com/CALLE-AI/awesome-phone-call-agents), under `apps/typescript/readycheck/`. Re-read upstream instructions and run its current validators. Select the source license before publishing the contribution; keep bundled font notices.
 4. Record and publish the demo with consented runtime evidence and clearly labeled fictional examples.

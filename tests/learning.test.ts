@@ -83,6 +83,41 @@ function setup(path = ':memory:') {
 }
 
 describe('bounded correction and account learning', () => {
+  it('explains excluded field aliases and never silently remaps them into verified prices', () => {
+    const result = parseCallResult(
+      {
+        recipients: [
+          {
+            attempts: [
+              { transcript_turns: [{ speaker: 'user', text: 'The price is $30 including fees.' }] },
+            ],
+            structured_result: {
+              disposition: 'answered',
+              facts: ['price_revised', 'price_final_all_in'].map((field) => ({
+                field,
+                value_json: '3000',
+                quote: 'The price is $30 including fees.',
+                turn_index: 0,
+                certainty: 'confirmed',
+                conditions: [],
+                unit: 'USD',
+                price_basis: 'all_in',
+              })),
+            },
+          },
+        ],
+      },
+      defaultTask('repair'),
+      recipient,
+      'synthetic-alias-call',
+      now,
+    );
+    assert.equal(result.facts.length, 0);
+    assert.equal(result.transcript.length, 1);
+    assert.equal(result.extractionWarnings?.length, 1);
+    assert.match(result.extractionWarnings![0], /unrecognized requirement names/);
+    assert.equal(evaluateCandidate(defaultTask('repair'), result).verdict, 'unknown');
+  });
   it('repairs an exact amount once, preserves provenance, and never grants review', () => {
     const result = parse('Thousand dollars.', 1000, 9);
     assert.equal(result.facts[0].value, 100000);

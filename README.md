@@ -56,7 +56,7 @@ Browser tests create synthetic accounts and cases. Reports and screenshots go to
 
 Follow the [controlled live guide](docs/LIVE_TEST_PROTOCOL.md) to configure a server key, consenting recipients, authorized accounts and call limits. Each inquiry requires its reviewed plan to be approved in the app.
 
-The caller is instructed to keep the user's budget private, ask for the shop's price first and request flexibility once when needed. CALL-E controls live speech; the revised negotiation is locally tested but still needs live validation.
+The caller is instructed to keep the user's budget private, ask for the shop's price first and request flexibility once when needed. CALL-E controls live speech; the latest live test kept the budget private but failed to negotiate. See the verification record for the observed failures.
 
 Source-backed dollar and transcript-reference corrections remain proposals until reviewed. Accepted repairs add fixed reminders to future plans; rejected repairs pause that method for the account. Inspect or reset feedback in **Learning**. This is bounded application memory, not model training. See [architecture](docs/ARCHITECTURE.md).
 

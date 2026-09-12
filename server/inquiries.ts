@@ -190,7 +190,7 @@ export function preparePlan(
           user.id,
           'queued',
           `readycheck_${inquiryId}`,
-          JSON.stringify(callPayload(taskText, recipient!, inquiryId)),
+          JSON.stringify(callPayload(taskText, recipient!, inquiryId, policy.fields)),
           now.toISOString(),
           now.toISOString(),
         );

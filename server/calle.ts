@@ -39,7 +39,11 @@ export const resultSchema = {
             description:
               'Earlier explicit expiry stated by the recipient as an ISO timestamp with offset. Omit this optional field when no expiry was stated. Never invent an expiry.',
           },
-          field: { type: 'string' },
+          field: {
+            type: 'string',
+            description:
+              'Use exactly an approved requirement ID. Initial and revised prices use the same money requirement ID in separate facts; never invent price_initial, price_revised or availability aliases.',
+          },
           value_json: {
             type: 'string',
             description:
@@ -180,12 +184,35 @@ export class CalleTransport implements CallTransport {
     return r.json();
   }
 }
-export function callPayload(taskText: string, recipient: Recipient, inquiryId: string) {
+export function callPayload(
+  taskText: string,
+  recipient: Recipient,
+  inquiryId: string,
+  fields: string[],
+) {
+  if (!fields.length || new Set(fields).size !== fields.length)
+    throw new Error('A call result schema needs distinct approved requirement IDs.');
+  const schema = {
+    ...resultSchema,
+    properties: {
+      ...resultSchema.properties,
+      facts: {
+        ...resultSchema.properties.facts,
+        items: {
+          ...resultSchema.properties.facts.items,
+          properties: {
+            ...resultSchema.properties.facts.items.properties,
+            field: { ...resultSchema.properties.facts.items.properties.field, enum: [...fields] },
+          },
+        },
+      },
+    },
+  };
   return {
     task: taskText,
     recipients: [{ phones: [recipient.phone], region: 'US', locale: 'en-US' }],
-    result_schema: resultSchema,
-    recipient_result_schema: resultSchema,
+    result_schema: schema,
+    recipient_result_schema: schema,
     metadata: { readycheck_inquiry_id: inquiryId, schema_version: SCHEMA_VERSION },
   };
 }
@@ -255,7 +282,13 @@ export function parseCallResult(
   for (const [index, f] of parsed.data.facts.entries()) {
     const repairs: ExtractionRepair[] = [];
     const requirement = task.requirements.find((r) => r.id === f.field);
-    if (!requirement) continue;
+    if (!requirement) {
+      const warning =
+        'Some answers used unrecognized requirement names and were excluded. Review the transcript for missing price or availability details.';
+      if (!result.extractionWarnings?.includes(warning))
+        (result.extractionWarnings ||= []).push(warning);
+      continue;
+    }
     let value;
     try {
       value = valueSchema.parse(JSON.parse(f.value_json));
