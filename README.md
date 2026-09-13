@@ -1,28 +1,160 @@
-# ReadyCheck
+# ReadyCheck — Know Before You Go
 
-ReadyCheck helps people find out whether a repair service, item or venue meets their whole request. It compares answers against must-haves, shows the source evidence, and leaves estimates, contradictions and missing answers unresolved.
+[![Node.js 24](https://img.shields.io/badge/Node.js-24-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![React 19](https://img.shields.io/badge/React-19-149ECA.svg?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6.svg?logo=typescript&logoColor=white)](tsconfig.json)
+[![CALL-E API](https://img.shields.io/badge/CALL--E-Calls_API-274F43.svg)](https://docs.heycall-e.com/calls)
+[![CI](https://github.com/ankitlade12/readycheck/actions/workflows/ci.yml/badge.svg)](https://github.com/ankitlade12/readycheck/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-175_passing-brightgreen.svg)](#verify)
+[![Browser workflows](https://img.shields.io/badge/browser_workflows-17_passing-brightgreen.svg)](#verify)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The app includes guided intake, purchase/rental options, saved cases, requirement revisions, evidence review, focused follow-ups and human-recorded outcomes. CALL-E handles approved phone inquiries. ReadyCheck never books, pays or accepts terms.
+> **A business answering the phone is only the beginning. Know whether its answer actually meets your request.**
 
-## Run locally
+ReadyCheck turns a practical request into a requirement-by-requirement comparison backed by conversation evidence. Ask whether a shop can repair a backpack before Friday, within your budget, and at a time you can drop it off. Review what was said, resolve the missing detail, and choose the next step.
 
-Use Node 22.13 or newer; the Docker image uses Node 24.
+CALL-E handles approved phone inquiries. ReadyCheck handles the request, durable execution, source review, comparison, and the user's decision. Estimates, contradictions and missing answers stay visible.
+
+**Built for:** [CALL-E: Your Code Is Calling](https://call-e.devpost.com/)<br>
+**Try it:** run the credential-free fictional demo locally; public hosting is pending<br>
+**Source:** [ankitlade12/readycheck](https://github.com/ankitlade12/readycheck)
+
+## Quick Highlights
+
+- **The whole request:** compare service or item identity, total price, dates and availability together.
+- **Evidence beside each answer:** inspect exact recipient quotes, supporting questions, source segments and freshness.
+- **A private budget:** the caller is instructed to ask the shop's price first and negotiate once when needed.
+- **Useful follow-ups:** preview the single unresolved question that could change the decision.
+- **Explicit tradeoffs:** explore a supported budget change and save it as a new revision; the original request stays intact.
+- **Reviewable corrections:** fix interpretation, certainty, conditions and source references while retaining the original evidence.
+- **Bounded learning:** account-scoped feedback selects or pauses two known extraction-repair methods.
+- **Durable call recovery:** preserve the approved request and idempotency key, pause uncertain dispatches, and recover the original operation.
+- **A complete user journey:** save cases, shortlist options, record an arrangement or outcome, and export the evidence.
+- **No-call default:** fictional samples and automated tests require no CALL-E credentials and never dial.
+
+[Deploy on Render](https://dashboard.render.com/blueprint/new?repo=https%3A%2F%2Fgithub.com%2Fankitlade12%2Freadycheck) · [Deployment configuration and cost](docs/DEPLOYMENT.md)
+
+## Product Preview
+
+![ReadyCheck comparing a fictional backpack repair request](docs/images/readycheck-desktop.png)
+
+<details>
+<summary>View the mobile evidence experience</summary>
+
+![ReadyCheck evidence review on a mobile viewport](docs/images/readycheck-mobile.png)
+
+</details>
+
+Screenshots use fictional businesses and responses. They demonstrate the product workflow, not current business availability.
+
+## The Problem
+
+A business directory can tell you who exists. It rarely tells you whether someone can meet all the conditions that matter today.
+
+A repair shop may offer the right service but miss the deadline. A low starting price may exclude required fees. A rental may be the wrong model, need an unaffordable deposit, or be unavailable during your pickup window. A friendly “yes” may answer only one part of a compound question.
+
+ReadyCheck keeps those distinctions visible so that a promising conversation does not become an unsupported recommendation.
+
+## The Product
+
+The journey starts with a structured request and ends with a human-recorded next step:
+
+1. Describe a repair, item/rental, or venue request and review its must-haves and preferences.
+2. Choose recipients and inspect the questions before approving an inquiry.
+3. Track dispatch, provider handling and result preparation.
+4. Review extracted answers against the recipient's words and question context.
+5. Compare matches, blockers, uncertain answers and expired evidence.
+6. Ask a focused follow-up or explicitly revise a supported requirement.
+7. Shortlist an option, record what you arranged, and save the eventual outcome.
+
+A passing comparison does not make a booking. ReadyCheck never pays, accepts terms, or marks real-world completion on the user's behalf.
+
+## Why CALL-E
+
+The missing information lives with the person answering the business phone. CALL-E supplies the phone interaction and structured result; ReadyCheck supplies the approved scope and checks the returned evidence.
+
+| Workflow step           | Implementation                                                                |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| Prepare the inquiry     | Compile the reviewed request into one versioned conversation policy           |
+| Create the call         | Server-side `POST /v1/calls`, explicit recipient and stable idempotency key   |
+| Specify extraction      | Both result schemas restrict facts to the approved requirement IDs            |
+| Observe progress        | Read the existing task with `GET /v1/calls/{id}`                              |
+| Recover a lost response | One user-requested replay of the exact stored body and original key           |
+| Use the answer          | Validate provenance, require live evidence review, then evaluate requirements |
+
+The direct HTTP adapter lives in [server/calle.ts](server/calle.ts). It uses the documented CALL-E Calls API; it does not depend on a private SDK or agent CLI login.
+
+**Live validation boundary:** earlier app-originated calls established runtime execution and transcript persistence. The latest recorded call kept the budget private but failed the intended negotiation and had screening and role-confusion problems. Policy 1.3.0 addresses those behaviors in its instructions and local regressions; it has not yet been validated in another live call. CALL-E controls speech and does not invoke the local rehearsal controller before each turn. See the [observed verification record](docs/VERIFICATION.md).
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    PERSON[Person] --> UI[React product interface]
+    UI --> API[Express API and session ownership]
+    API --> PLAN[Versioned request and approved plan]
+    PLAN --> DB[(SQLite cases, inquiries and evidence)]
+    PLAN --> CALL[CALL-E Calls API]
+    CALL --> RESULT[Transcript and structured answers]
+    RESULT --> CHECK[Schema, quote and source validation]
+    CHECK --> REVIEW[Human evidence review]
+    REVIEW --> EVAL[Deterministic requirement evaluator]
+    EVAL --> UI
+    REVIEW --> MEMORY[Account-scoped correction feedback]
+    MEMORY --> PLAN
+    PERSON --> OUTCOME[Shortlist and recorded outcome]
+    OUTCOME --> DB
+```
+
+### Technology Stack
+
+| Layer        | Technology                    | Purpose                                                   |
+| ------------ | ----------------------------- | --------------------------------------------------------- |
+| Interface    | React 19 + Vite 7             | Guided intake, progress, comparison and evidence review   |
+| Language     | Strict TypeScript             | Shared requirement, evidence and workflow contracts       |
+| Server       | Express 5 on Node.js          | Session ownership, validation and provider access         |
+| Storage      | SQLite with WAL               | Durable accounts, revisions, inquiries and review history |
+| Validation   | Zod + JSON Schema             | Runtime input checks and constrained provider extraction  |
+| Calling      | CALL-E Calls REST API         | Approved inquiries and structured call results            |
+| Verification | Node test runner + Playwright | Domain, HTTP, fault and browser workflow checks           |
+| Packaging    | Docker + Render Blueprint     | One persistent Node instance with a database volume       |
+
+## Judge Quick Start
+
+### Run locally
+
+Use **Node.js 24** and npm. The application minimum is Node 22.13; the backup script requires 22.16 or newer.
 
 ```sh
+git clone https://github.com/ankitlade12/readycheck.git
+cd readycheck
 npm ci
 npm run dev
 ```
 
-Open **http://localhost:3000**. Samples need no API key or cloud account. Choose **Try a sample**, preview the questions and load fictional responses. The repair example shows two paths: resolve a missing final price, or preview a budget revision backed by a confirmed quote.
+Open **http://localhost:3000**. No API key, credit card, or cloud account is needed for the sample journey. SQLite creates the local workspace automatically in `data/readycheck.sqlite`.
 
-SQLite stores local accounts and cases in `data/readycheck.sqlite`. Creating an account retains the guest workspace. Use the exact origin configured in `APP_ORIGIN` for browser requests.
+If using the upstream contribution checkout, start in `apps/typescript/readycheck/` and run the same npm commands.
 
-For a production build:
+### Suggested walkthrough
 
-```sh
-npm run build
-npm start
-```
+1. Choose **Find a repair service** from the home page.
+2. Review the backpack repair, budget, deadline and drop-off requirements.
+3. Select **Preview inquiry**, then **Load fictional responses**.
+4. Inspect **Thread & Trail**: its starting estimate remains unresolved.
+5. Open **View evidence** and inspect the source conversation.
+6. Preview the **one-question follow-up**, then load its fictional answer.
+7. Confirm that the supported final total changes the comparison.
+8. Save the option to your shortlist and record your next step.
+9. Reload or export the case to verify the saved result.
+
+For a second path, start a fresh sample and explore the supported budget revision. Rental and venue samples exercise exact item alternatives, deposits and unavailable options.
+
+### Real inquiries
+
+The [live test guide](docs/LIVE_TEST_PROTOCOL.md) explains server credentials, consenting recipients, authorized accounts, calling hours and call limits. Each real inquiry requires approval of its current plan. Phone numbers are masked in the interface; secrets stay on the server.
+
+**Stop future calls** stops queued work. It does not cancel a call already accepted by CALL-E. Closing the browser does not cancel it either. There are no recurring call schedules.
 
 ## Verify
 
@@ -32,11 +164,22 @@ npm run format:check
 npm run rehearse
 ```
 
-`verify` runs TypeScript, isolated unit/API tests, 45 synthetic evaluator cases and the production build. `rehearse` generates fictional dialogue in `artifacts/conversation-rehearsal.md`. Neither makes phone calls.
+Latest local verification:
 
-For browser checks, start a separate production preview after building:
+```text
+Unit, HTTP and fault tests    175 passed
+Synthetic evaluator cases     45 expectations matched
+Browser workflows             17 passed
+TypeScript and build          passed
+Formatting                    passed
+```
+
+These are self-authored regression checks, not an independent extraction-accuracy benchmark. Five fictional rehearsals exercise the local policy without telephony. CI runs the same checks on Node 24 and publishes its actual status in the badge above.
+
+For browser checks, build and start an isolated preview:
 
 ```sh
+npm run build
 PORT=3101 APP_ORIGIN=http://127.0.0.1:3101 \
 DATABASE_PATH=./artifacts/browser-preview.sqlite \
 LIVE_CALLS_ENABLED=false CALLE_API_KEY='' TEST_RECIPIENTS_JSON='[]' LIVE_USER_IDS='' \
@@ -50,28 +193,69 @@ npx playwright install chromium
 TEST_BASE_URL=http://127.0.0.1:3101 npm run test:browser
 ```
 
-Browser tests create synthetic accounts and cases. Reports and screenshots go to ignored `artifacts/`. See the [verification record](docs/VERIFICATION.md) for tested behavior and limits.
+| Command                       | Purpose                                              |
+| ----------------------------- | ---------------------------------------------------- |
+| `npm run dev`                 | Start the local application                          |
+| `npm run build` / `npm start` | Build and serve the production app                   |
+| `npm run verify`              | Typecheck, unit/API tests, evaluator cases and build |
+| `npm run test:browser`        | Test product workflows against an isolated preview   |
+| `npm run rehearse`            | Generate fictional local conversation rehearsals     |
+| `npm run live:check`          | Check configured readiness without placing a call    |
 
-## Real inquiries and learning
+## Project Structure
 
-Follow the [controlled live guide](docs/LIVE_TEST_PROTOCOL.md) to configure a server key, consenting recipients, authorized accounts and call limits. Each inquiry requires its reviewed plan to be approved in the app.
+```text
+readycheck/
+├── src/components/       # Intake, comparison, evidence, progress and outcomes
+├── src/domain/           # Requirements, evaluation, policy, repairs and samples
+├── server/               # Sessions, SQLite, orchestration and CALL-E adapter
+├── tests/                # Domain, HTTP, fault and browser regressions
+├── scripts/              # Evaluation, rehearsal, readiness and backup utilities
+├── docs/                 # Focused architecture, operations and submission guides
+├── public/notices/       # Bundled font licenses
+├── .github/workflows/    # Reproducible CI
+├── Dockerfile            # Persistent Node deployment
+└── render.yaml           # Render service, persistent disk and health checks
+```
 
-The caller is instructed to keep the user's budget private, ask for the shop's price first and request flexibility once when needed. CALL-E controls live speech; the latest live test kept the budget private but failed to negotiate. See the verification record for the observed failures.
+## Evidence, Privacy and Learning
 
-Source-backed dollar and transcript-reference corrections remain proposals until reviewed. Accepted repairs add fixed reminders to future plans; rejected repairs pause that method for the account. Inspect or reset feedback in **Learning**. This is bounded application memory, not model training. See [architecture](docs/ARCHITECTURE.md).
+- Live extracted facts require review before they can support a match.
+- Exact quotations and source checks establish provenance; quote presence alone does not prove meaning.
+- Price parsing rejects ambiguous amounts instead of guessing. Estimates and unresolved conditions remain uncertain.
+- Corrections preserve the original interpretation and record a reason. Result ingestion commits atomically and deduplicates repeated deliveries.
+- Two known repair methods handle literal dollar conversions and unique source-reference corrections. Feedback enables fixed reminders or pauses a rejected method; it does not train a model or rewrite code.
+- Sessions isolate workspaces. Live access additionally requires configured account and recipient allowlists.
+- Raw call payloads and transcripts expire under a configurable retention period, defaulting to 30 days. Evidence freshness expires separately.
+- Private recordings, credentials, databases and installation records are excluded from Git and deployment uploads.
 
-## Project map
+This app supports factual repair, item/rental and venue inquiries. It is not a workflow for medical, legal, financial or emergency decisions.
 
-| Path              | Purpose                                                                 |
-| ----------------- | ----------------------------------------------------------------------- |
-| `src/components/` | Intake, progress, comparison, evidence and outcomes                     |
-| `src/domain/`     | Schemas, evaluation, conversation policy, repairs and fictional samples |
-| `server/`         | Authentication, SQLite, inquiry orchestration and CALL-E transport      |
-| `tests/`          | Domain, HTTP, recovery and browser coverage                             |
-| `scripts/`        | Evaluation, rehearsal, readiness, backup and container startup          |
+## Challenge Alignment
 
-## Delivery
+| Judging area              | ReadyCheck evidence                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| Real World Impact         | A specific everyday coordination problem: finding an option that meets every material requirement |
+| Quality of the Idea       | Evidence review, focused follow-ups and explicit tradeoffs carry the task beyond call completion  |
+| Technical Implementation  | Runtime CALL-E integration, constrained extraction, durable recovery and reproducible fault tests |
+| Product Experience & Demo | Guided request-to-outcome workflow with responsive UI and a credential-free sample path           |
 
-Use one persistent Node instance with durable SQLite storage. The [deployment guide](docs/DEPLOYMENT.md) covers Docker, Railway, backups and recovery. Public hosting and the hackathon submission are still pending; the [submission checklist](docs/SUBMISSION.md) contains the remaining work and demo outline.
+See the [submission package](docs/SUBMISSION.md) for release links, demo narration and entry text. The [official rules](https://call-e.devpost.com/rules) remain the source of truth for submission requirements.
 
-Keep credentials, databases, recordings and local planning files out of Git. Bundled font licenses are in `public/notices/`.
+## Deployment and Current Boundary
+
+The [deployment guide](docs/DEPLOYMENT.md) covers a single persistent Node container, SQLite storage, backups and recovery. A Render deployment is prepared; account authentication and approval of its paid persistent storage are pending. The sample experience works locally without hosting access.
+
+ReadyCheck is a working prototype with an opt-in live integration. Public business discovery, unrestricted dialing, email verification, password recovery, automatic bookings, independent quality benchmarks and reliable live negotiation are not established features. Future work should validate conversation quality and real user outcomes before expanding scope.
+
+## Technical References
+
+- [Architecture and evidence behavior](docs/ARCHITECTURE.md)
+- [Observed verification and limitations](docs/VERIFICATION.md)
+- [Controlled live-call protocol](docs/LIVE_TEST_PROTOCOL.md)
+- [Deployment, backups and recovery](docs/DEPLOYMENT.md)
+- [Submission package](docs/SUBMISSION.md)
+
+## License
+
+[MIT](LICENSE) © 2026 ReadyCheck contributors. Bundled DM Sans and Instrument Serif fonts retain their [SIL Open Font License notices](public/notices/).

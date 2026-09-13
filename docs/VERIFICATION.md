@@ -1,6 +1,6 @@
 # Verification record
 
-September 12, 2026. The latest live test used **86d46b4**, policy **1.2.0**; the current locally verified policy is **1.3.0**, with evidence schema/evaluator **1.2.0**. This record describes observed checks, not general AI accuracy. Earlier development logs are retained in Git history.
+September 13, 2026. Release checks used application source **02d0ffb** plus documentation, screenshots, CI and Render packaging changes. The latest live test used **86d46b4**, policy **1.2.0**; the current locally verified policy is **1.3.0**, with evidence schema/evaluator **1.2.0**. This record describes observed checks, not general AI accuracy. Earlier development logs are retained in Git history.
 
 ## Automated checks
 
@@ -38,6 +38,10 @@ The completed operator recovery followed the [documented same-key, unchanged-bod
 Earlier calls established transcript persistence, a zero-fact unresolved result and an accurately extracted $1,000 amount. They also exposed repeated questioning and a spoken budget ceiling, reinforcing that transport success is not conversation quality.
 
 ## Deployment boundary
+
+The September 13 release passed typechecking, 175 tests across 19 suites, all 45 evaluator expectations, the production build, formatting, and 17 browser workflows against an isolated local store. A 2 minute 18 second narrated video demonstrates the fictional workflow without CALL-E credentials or telephone calls. Desktop/mobile screenshots and representative video frames were inspected; the recording reported no page errors. Narration is generated speech. The upstream contribution passed `python3 scripts/validate_repository.py`.
+
+The Render Blueprint matches Render's published JSON schema. Account authentication and the hosting plan decision remain pending; schema validation is not deployment verification. The paid configuration includes persistent storage. A free service can demonstrate the UI but cannot preserve its SQLite records across service restarts. No public deployment or hosted persistence check is claimed.
 
 An earlier Docker snapshot passed local browser checks, container replacement persistence and an isolated backup/restore drill with SQLite integrity checks. That does not establish hosted resilience or verification of the latest container image. The prior Railway project-creation attempt was blocked by an expired account trial; no public deployment was created.
 

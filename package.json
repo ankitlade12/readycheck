@@ -16,8 +16,8 @@
     "live:check": "node --import tsx scripts/live-check.ts",
     "verify": "npm run typecheck && npm test && npm run evaluate && vite build",
     "test:browser": "playwright test",
-    "format": "prettier --write src server tests scripts docs package.json tsconfig.json vite.config.ts playwright.config.ts README.md",
-    "format:check": "prettier --check src server tests scripts docs package.json tsconfig.json vite.config.ts playwright.config.ts README.md",
+    "format": "prettier --write src server tests scripts docs package.json tsconfig.json vite.config.ts playwright.config.ts README.md render.yaml .github/workflows/ci.yml",
+    "format:check": "prettier --check src server tests scripts docs package.json tsconfig.json vite.config.ts playwright.config.ts README.md render.yaml .github/workflows/ci.yml",
     "rehearse": "node --import tsx scripts/rehearse.ts"
   },
   "dependencies": {
@@ -42,5 +42,6 @@
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"
-  }
+  },
+  "license": "MIT"
 }

@@ -1,33 +1,40 @@
 # ReadyCheck pilot operations
 
-Run a single persistent container with HTTPS and a durable volume at `/app/data`. Keep `LIVE_CALLS_ENABLED=false` for the sample pilot. The application has no public business discovery, email verification or password recovery service. An operator must be available before inviting users to depend on it.
+Run one Node instance with HTTPS and persistent storage: `/var/data` on Render or a volume at `/app/data` with Docker. Keep `LIVE_CALLS_ENABLED=false` for the sample pilot. The application has no public business discovery, email verification or password recovery service. An operator must be available before inviting users to depend on it.
 
-## Railway configuration
+## Render deployment
 
-The supplied `railway.json` builds the root Dockerfile and probes `/api/health`. Create a separate project and service, attach a volume at `/app/data`, and set:
+The root [render.yaml](../render.yaml) defines a Node 24 web service, one instance, a 1 GB persistent disk at `/var/data`, and `/api/health` checks. It builds with `npm ci --include=dev && npm run build`, then starts the existing Express application. The start command uses Render's generated HTTPS URL as `APP_ORIGIN` unless an explicit custom origin is configured. This keeps session cookies and origin validation aligned.
 
-```text
-NODE_ENV=production
-BIND_HOST=0.0.0.0
-PORT=3000
-DATABASE_PATH=/app/data/readycheck.sqlite
-APP_ORIGIN=https://<the-generated-service-domain>
-LIVE_CALLS_ENABLED=false
-RAILWAY_RUN_UID=0
-```
+[Deploy this Blueprint](https://dashboard.render.com/blueprint/new?repo=https%3A%2F%2Fgithub.com%2Fankitlade12%2Freadycheck) from an authenticated Render account. Review the resources and cost before deploying. The proposed compute plan is `0.5c-512mb` ($7/month), plus a 1 GB disk ($0.25/month): **$7.25/month base resource cost**, excluding any usage overages or taxes, as checked September 13, 2026. A Hobby workspace has no workspace subscription charge. Confirm the dashboard total before provisioning. [Render pricing](https://render.com/pricing).
 
-Use one replica. Do not override the Docker start command. [Railway volumes mount as root](https://docs.railway.com/volumes#permissions); the container entry point prepares only the database directory and SQLite files, rejects symbolic links, and drops to UID/GID 1000 before importing the server. Ordinary Docker named volumes use the image's default `node` user.
+A free Render web service cannot attach a persistent disk; its local filesystem is ephemeral. That would lose SQLite accounts and cases after restarts. This Blueprint intentionally uses a paid disk-backed service. [Persistent disk behavior](https://render.com/docs/disks).
 
-Set credentials only through the host's secret variable controls. Agent CLI OAuth credentials are separate from the application's REST API key and must not be copied into this deployment. Enabling the server does not replace the recipient allowlist, account allowlist, budget controls or per-plan approval.
+The deployment defaults to fictional samples: no CALL-E key, no recipients, no authorized live accounts, and `LIVE_CALLS_ENABLED=false`. Do not import the development database or private call artifacts. The public judge walkthrough needs no account or credentials; each guest gets an isolated workspace. Signup is optional.
 
-After deployment, verify signup, a saved fictional comparison, sign-out/sign-in, and persistence after a service restart. A green health probe establishes HTTP availability, not a successful CALL-E inquiry. Deployment with SQLite incurs restart downtime; zero-downtime multi-replica operation is not supported.
+After provisioning:
+
+1. Open the generated service URL and check `/api/health`.
+2. Run the README's fictional repair walkthrough and confirm the comparison and evidence load.
+3. Create a synthetic test account, save a case, sign out and sign back in.
+4. Restart this service, sign in again, and verify the saved case and revisions survived.
+5. Inspect the mounted disk and confirm `DATABASE_PATH=/var/data/readycheck.sqlite`.
+6. Keep the service accessible through the judging period and record the URL and tested commit in the verification record.
+
+Only data under the disk mount persists. A disk-backed service uses one instance and has brief restart downtime during deploys. CI-gated automatic deployment is configured; deployments wait for repository checks. [Blueprint reference](https://render.com/docs/blueprint-spec).
+
+## Docker alternative
+
+The Dockerfile remains available for any persistent container host. Mount a volume at `/app/data`, set `APP_ORIGIN` to the actual HTTPS origin, and keep live calling disabled for the sample pilot. Use one replica. The entry point supports preparing a root-owned volume before dropping privileges; ordinary Docker named volumes use the image's default `node` user. Never deploy SQLite on ephemeral storage while promising saved-case persistence.
+
+Server REST credentials belong in the host's secret controls only. CALL-E CLI OAuth credentials are separate and must not be copied into the deployment. Enabling live mode still requires recipient/account allowlists, limits and per-plan approval.
 
 ## Backup
 
 Use Node 24 for the operation below (the backup API requires at least Node 22.16). Run as the application user inside the container:
 
 ```sh
-node scripts/backup.mjs /app/data/backups
+node scripts/backup.mjs /var/data/backups
 ```
 
 The script uses [SQLite's online backup API through Node](https://nodejs.org/api/sqlite.html#sqlitebackupsourceDb-path-options), opens the source read-only, creates a unique private directory and validates the resulting snapshot with `PRAGMA integrity_check`. It includes committed WAL transactions and never overwrites an earlier snapshot. Only the output path is printed. A failed command is not a successful backup.
@@ -37,7 +44,7 @@ Export the verified snapshot to restricted storage outside this volume. Keeping 
 ## Restore drill and recovery
 
 1. Keep the original service and volume intact. Provision an isolated replacement volume and service with live calling disabled and no CALL-E key.
-2. Copy the verified snapshot to `/app/data/readycheck.sqlite` on the empty replacement volume. Do not mix it with older `-wal` or `-shm` files.
+2. Copy the verified snapshot to the configured `DATABASE_PATH` on the empty replacement volume. Do not mix it with older `-wal` or `-shm` files.
 3. Start the container, verify health, sign in with a test account, and inspect saved cases and revisions. Compare expected records from the backup time; newer writes cannot be restored from an older snapshot.
 4. Before switching traffic, stop writes to the original service. Reconcile every inquiry created since the snapshot with provider records. Stop restored queued work and invalidate its approvals; never enable calls merely because the restore succeeded. Keep uncertain calls paused and recover known IDs read-only.
 5. Switch traffic only after the operator verifies the replacement. Preserve the old volume for rollback and maintain `LIVE_CALLS_ENABLED=false` until reconciliation is complete.
